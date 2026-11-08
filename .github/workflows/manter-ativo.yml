@@ -1,0 +1,18 @@
+# Todo dia: um acesso ao banco e à API para o plano grátis do Supabase não pausar o projeto
+# (ele pausa depois de 7 dias sem uso, e o sistema às vezes fica 30 dias sem acesso).
+# Segredo: SUPABASE_DB_URL. Variáveis: SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY. Se falhar, o GitHub manda e-mail.
+name: Manter o Supabase ativo
+on:
+  schedule:
+    - cron: '17 9 * * *'   # 06:17 em Brasília
+  workflow_dispatch:
+jobs:
+  ativo:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Acesso pela API
+        run: curl -fsS -o /dev/null -w "API respondeu %{http_code}\n" "${{ vars.SUPABASE_URL }}/auth/v1/health" -H "apikey: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}"
+      - name: Acesso ao banco
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+        run: psql "$DB" -tA -c "select 'lançamentos no banco: ' || count(*) from public.lancamentos"

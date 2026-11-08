@@ -1,19 +1,13 @@
-# Todo dia: backup do banco (criptografado) e um acesso ao Supabase para o plano grátis não pausar o projeto.
+# Backup MANUAL do banco, criptografado: GitHub > Actions > "Backup" > Run workflow.
 # Segredos: SUPABASE_DB_URL e BACKUP_SENHA (senha para abrir o backup; guardar fora do GitHub também).
-# Variáveis (não secretas): SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY.
-# O backup fica em Actions > (execução) > Artifacts por 90 dias. Se falhar, o GitHub manda e-mail.
-name: Backup diário e manter ativo
+# O arquivo fica em Actions > (execução) > Artifacts por 90 dias. Para abrir: gpg -d ARQUIVO.tar.gz.gpg | tar xz
+name: Backup
 on:
-  schedule:
-    - cron: '17 9 * * *'   # 06:17 em Brasília
   workflow_dispatch:
 jobs:
   backup:
     runs-on: ubuntu-24.04
     steps:
-      - name: Manter o Supabase ativo (acesso pela API)
-        run: |
-          curl -fsS -o /dev/null -w "API respondeu %{http_code}\n" "${{ vars.SUPABASE_URL }}/auth/v1/health" -H "apikey: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}"
       - name: Cliente do Postgres 17
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
