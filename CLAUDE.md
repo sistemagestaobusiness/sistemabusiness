@@ -5,7 +5,8 @@ React + TypeScript (Vite) nas telas, Supabase (org "Sistema Business", conta con
 
 ## Regras que não se quebram
 - Nunca enviar ao GitHub (push, merge) sem o OK explícito do Alexandre para aquela entrega. Commit local pode.
-- O conector do Supabase NÃO enxerga este projeto (fica na org da Drogarema). Mudança de banco = arquivo novo em `supabase/migrations/NNNN_assunto.sql`, que o Alexandre roda no SQL Editor depois de autorizar.
+- O conector do Supabase NÃO enxerga este projeto (fica na org da Drogarema). Mudança de banco = arquivo novo em `supabase/migrations/NNNN_assunto.sql` (sem begin/commit: a rotina `.github/workflows/banco.yml` aplica cada arquivo numa transação só, depois do push autorizado). Script com dado pessoal ou que depende de edição à mão vai em `supabase/manual/`, nunca em migrations.
+- Backup diário criptografado + acesso que impede a pausa do plano grátis: `.github/workflows/backup.yml`.
 - Testar toda migração antes num Postgres local (stub do schema `auth` + roles `anon`/`authenticated`), incluindo: sócio com 2FA grava, sem 2FA não vê nada, contabilidade só lê, delete negado.
 
 ## Atualização automática (o erro da Drogarema não pode voltar)
