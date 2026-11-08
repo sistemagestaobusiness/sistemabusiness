@@ -3,16 +3,9 @@ import { supabase } from '../lib/supabase'
 import { useAoVivo } from '../lib/vivo'
 import { dataBR, diasDoMes, isoDia, lerValor, moeda } from '../lib/formato'
 
-type Categoria = { id: number; nome: string; tipo: 'ENTRADA' | 'SAIDA'; secao: string; ordem: number; arquivada: boolean }
-type Lancamento = { id: number; data: string; valor: number; categoria_id: number; descricao: string | null; status: 'PREVISTO' | 'REALIZADO' | 'CONCILIADO'; versao: number }
+import { dados, todas, type Categoria, type Lancamento } from '../lib/tipos'
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-
-async function dados<T>(p: PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
-  const { data, error } = await p
-  if (error) throw new Error(error.message)
-  return data as T
-}
 
 export function Fluxo() {
   const hoje = new Date()
@@ -25,10 +18,10 @@ export function Fluxo() {
   const ini = dias[0], fim = dias[dias.length - 1]
 
   const cats = useAoVivo(['categorias'], () =>
-    dados<Categoria[]>(supabase.from('categorias').select('id,nome,tipo,secao,ordem,arquivada').order('tipo').order('ordem')))
+    dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
   const lancs = useAoVivo(['lancamentos'], () =>
-    dados<Lancamento[]>(supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao')
-      .is('excluido_em', null).gte('data', ini).lte('data', fim)), [ini, fim])
+    todas<Lancamento>((de, ate) => supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id')
+      .is('excluido_em', null).gte('data', ini).lte('data', fim).order('id').range(de, ate)), [ini, fim])
   // saldo vem do banco: tudo que aconteceu antes do dia 1 do mês, de todas as contas
   const saldoIni = useAoVivo(['lancamentos', 'contas', 'categorias'], () =>
     dados<number>(supabase.rpc('fn_saldo_ate', { p_data: ini })), [ini])
@@ -65,8 +58,8 @@ export function Fluxo() {
   const linha = (c: Categoria) => {
     const total = dias.reduce((a, d) => a + (porCelula.get(`${c.id}|${d}`) ?? []).reduce((x, l) => x + Number(l.valor), 0), 0)
     return (
-      <tr key={c.id} className={c.arquivada ? 'arquivada' : ''}>
-        <th className="fixa">{c.nome}{c.arquivada && <span className="tag">arquivada</span>}</th>
+      <tr key={c.id} className={c.arquivada ? 'arquivada' : ''} style={c.cor ? { background: c.cor } : undefined}>
+        <th className="fixa" style={c.cor ? { background: c.cor } : undefined}>{c.nome}{c.arquivada && <span className="tag">arquivada</span>}</th>
         {dias.map((d) => {
           const ls = porCelula.get(`${c.id}|${d}`) ?? []
           const v = ls.reduce((x, l) => x + Number(l.valor), 0)
@@ -109,7 +102,7 @@ export function Fluxo() {
         <button onClick={() => { if (mes === 12) { setMes(1); setAno(ano + 1) } else setMes(mes + 1) }}>›</button>
         <button onClick={() => { setMes(hoje.getMonth() + 1); setAno(hoje.getFullYear()) }}>Hoje</button>
         <label className="check"><input type="checkbox" checked={mostrarArquivadas} onChange={(e) => setMostrarArquivadas(e.target.checked)} /> mostrar arquivadas</label>
-        <span className="legenda"><i className="previsto" /> previsto</span>
+        <span className="legenda"><i className="previsto" /> previsto (projeção) · clique na célula para lançar</span>
       </div>
       {erro && <p className="aviso">Não consegui carregar: {erro}</p>}
       <div className="grade">
@@ -143,7 +136,7 @@ function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Cate
   const [editando, setEditando] = useState<Lancamento | null>(null)
   const [valor, setValor] = useState('')
   const [descricao, setDescricao] = useState('')
-  const [status, setStatus] = useState<Lancamento['status']>(dia <= isoDia(new Date()) ? 'REALIZADO' : 'PREVISTO')
+  const [status, setStatus] = useState<Lancamento['status']>(() => (dia <= isoDia(new Date()) ? 'REALIZADO' : 'PREVISTO'))
   const [msg, setMsg] = useState('')
 
   const editar = (l: Lancamento) => { setEditando(l); setValor(moeda(Number(l.valor))); setDescricao(l.descricao ?? ''); setStatus(l.status); setMsg('') }
@@ -152,7 +145,7 @@ function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Cate
   const salvar = async (e: FormEvent) => {
     e.preventDefault()
     const v = lerValor(valor)
-    if (!v || v <= 0) { setMsg('Valor inválido.'); return }
+    if (!v) { setMsg('Valor inválido.'); return }
     if (editando) {
       // só grava se ninguém alterou esse lançamento enquanto você editava
       const { data, error } = await supabase.from('lancamentos')
@@ -163,7 +156,7 @@ function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Cate
       const { error } = await supabase.from('lancamentos').insert({ data: dia, valor: v, categoria_id: categoria.id, descricao: descricao || null, status })
       if (error) { setMsg(error.message); return }
     }
-    limpar()
+    fechar() // salvou: fecha e volta para a grade
   }
   const excluir = async (l: Lancamento) => {
     if (!confirm('Mandar este lançamento para a lixeira?')) return

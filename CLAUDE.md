@@ -22,4 +22,10 @@ React + TypeScript (Vite) nas telas, Supabase (org "Sistema Business", conta con
 - Função nova: `set search_path = public`; `revoke execute ... from public, anon; grant ... to authenticated`.
 
 ## Testar antes de entregar
-`npm run build` e `npx oxlint`.
+- `npm run build` e `npx oxlint`.
+- Duas janelas (obrigatório): `npx vite build -c vite.config.teste.ts && node testes/duas-janelas.mjs`. Usa um Supabase simulado (`testes/supabase-simulado.ts`) em que as duas janelas dividem os dados e se avisam como o Realtime.
+- Banco: rodar as migrações num Postgres local com stub de `auth` e testar as regras de acesso.
+
+## Importação da planilha
+`python3 -I scripts/importar_planilha.py PLANILHA.xlsx SAIDA.sql --realizado-ate AAAA-MM-DD` gera o SQL e confere o saldo de cada mês com a linha Saldo da planilha. A saída tem nomes de clientes: nunca versionar (está no .gitignore).
+Cores da planilha: linha 118 amarela = pró-labore Rodrigo, linha 119 salmão = pró-labore Alexandre (não é "previsto").

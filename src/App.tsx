@@ -1,14 +1,22 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { configurado, supabase } from './lib/supabase'
 import { desligarTempoReal, ligarTempoReal, useEstadoTempoReal } from './lib/vivo'
 import { useVersaoNova } from './lib/versao'
 import { useSessao } from './auth/sessao'
 import { Login } from './auth/Login'
 import { Fluxo } from './telas/Fluxo'
+import { Lancamentos } from './telas/Lancamentos'
+import { Cadastros } from './telas/Cadastros'
+
+const TELAS = { fluxo: 'Fluxo de caixa', lancamentos: 'Lançamentos', cadastros: 'Cadastros' } as const
+type Tela = keyof typeof TELAS
+const telaDoEndereco = (): Tela => { const h = location.hash.slice(1); return h in TELAS ? (h as Tela) : 'fluxo' }
 
 export default function App() {
   const { sessao, etapa } = useSessao()
   const versaoNova = useVersaoNova()
+  const [tela, setTela] = useState<Tela>(telaDoEndereco)
+  useEffect(() => { const f = () => setTela(telaDoEndereco()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
 
   useEffect(() => {
     if (etapa === 'dentro') ligarTempoReal()
@@ -26,12 +34,12 @@ export default function App() {
       )}
       <header className="topo">
         <strong>Business</strong>
-        <nav><a className="ativo">Fluxo de caixa</a></nav>
+        <nav>{(Object.keys(TELAS) as Tela[]).map((t) => <a key={t} href={`#${t}`} className={tela === t ? 'ativo' : ''}>{TELAS[t]}</a>)}</nav>
         <IndicadorAoVivo />
         <span className="usuario">{sessao?.user.email}</span>
         <button className="link" onClick={() => supabase.auth.signOut()}>Sair</button>
       </header>
-      <main><Fluxo /></main>
+      <main>{tela === 'fluxo' ? <Fluxo /> : tela === 'lancamentos' ? <Lancamentos /> : <Cadastros />}</main>
     </div>
   )
 }

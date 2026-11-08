@@ -78,7 +78,8 @@ create table public.categorias (
   ordem         int not null default 0,
   cliente_id    bigint references public.clientes(id),
   fornecedor_id bigint references public.fornecedores(id),
-  arquivada     boolean not null default false       -- some da grade, continua no saldo
+  arquivada     boolean not null default false,      -- some da grade, continua no saldo
+  cor           text                                 -- destaque da linha (ex.: pró-labore)
 );
 
 create table public.recorrencias (
@@ -97,7 +98,7 @@ create table public.recorrencias (
 create table public.lancamentos (
   id             bigint generated always as identity primary key,
   data           date not null,
-  valor          numeric(14,2) not null check (valor > 0),   -- sempre positivo; o sinal vem da categoria
+  valor          numeric(14,2) not null check (valor <> 0),  -- o sinal vem da categoria; negativo = estorno
   categoria_id   bigint not null references public.categorias(id),
   conta_id       bigint references public.contas(id),
   cliente_id     bigint references public.clientes(id),
@@ -138,6 +139,53 @@ language sql stable security invoker set search_path = public as $$
 $$;
 revoke execute on function public.fn_saldo_ate(date) from public, anon;
 grant execute on function public.fn_saldo_ate(date) to authenticated;
+
+-- ajuste em massa (tela Lançamentos). security invoker: valem as regras de acesso de quem chama (só sócio altera)
+create or replace function public.fn_ajuste_massa(
+  p_ids bigint[], p_valor numeric default null, p_percentual numeric default null,
+  p_dias int default null, p_categoria bigint default null, p_status text default null, p_excluir boolean default false
+) returns int language plpgsql security invoker set search_path = public as $$
+declare n int;
+begin
+  if not public.eh_socio() then raise exception 'Sem permissão'; end if;
+  update public.lancamentos l set
+    valor        = coalesce(p_valor, case when p_percentual is not null then round(l.valor * (1 + p_percentual / 100), 2) end, l.valor),
+    data         = l.data + coalesce(p_dias, 0),
+    categoria_id = coalesce(p_categoria, l.categoria_id),
+    status       = coalesce(p_status, l.status),
+    excluido_em  = case when p_excluir then now() else l.excluido_em end
+  where l.id = any(p_ids) and l.excluido_em is null;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function public.fn_ajuste_massa(bigint[], numeric, numeric, int, bigint, text, boolean) from public, anon;
+grant execute on function public.fn_ajuste_massa(bigint[], numeric, numeric, int, bigint, text, boolean) to authenticated;
+
+-- projeção recorrente: cria os lançamentos PREVISTOS de uma recorrência, mês a mês, de inicio até fim
+-- (sem fim: 24 meses). Não duplica mês que já tem lançamento dessa recorrência.
+create or replace function public.fn_gerar_recorrencia(p_id bigint) returns int
+language plpgsql security invoker set search_path = public as $$
+declare r public.recorrencias; m date; d date; n int := 0;
+begin
+  if not public.eh_socio() then raise exception 'Sem permissão'; end if;
+  select * into r from public.recorrencias where id = p_id;
+  if not found then raise exception 'Recorrência % não existe', p_id; end if;
+  m := date_trunc('month', r.inicio)::date;
+  while m <= coalesce(r.fim, (date_trunc('month', r.inicio) + interval '23 months')::date) loop
+    d := m + (least(r.dia, extract(day from (m + interval '1 month - 1 day'))::int) - 1);
+    if d >= r.inicio and (r.fim is null or d <= r.fim) and not exists (
+      select 1 from public.lancamentos l where l.recorrencia_id = r.id and l.excluido_em is null
+        and date_trunc('month', l.data) = m) then
+      insert into public.lancamentos (data, valor, categoria_id, conta_id, descricao, status, recorrencia_id)
+      values (d, r.valor, r.categoria_id, r.conta_id, r.descricao, 'PREVISTO', r.id);
+      n := n + 1;
+    end if;
+    m := (m + interval '1 month')::date;
+  end loop;
+  return n;
+end $$;
+revoke execute on function public.fn_gerar_recorrencia(bigint) from public, anon;
+grant execute on function public.fn_gerar_recorrencia(bigint) to authenticated;
 
 -- ---------------------------------------------------------------- auditoria
 create table public.auditoria (
