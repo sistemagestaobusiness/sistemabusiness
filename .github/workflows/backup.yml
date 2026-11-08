@@ -1,0 +1,42 @@
+# Todo dia: backup do banco (criptografado) e um acesso ao Supabase para o plano grátis não pausar o projeto.
+# Segredos: SUPABASE_DB_URL e BACKUP_SENHA (senha para abrir o backup; guardar fora do GitHub também).
+# Variáveis (não secretas): SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY.
+# O backup fica em Actions > (execução) > Artifacts por 90 dias. Se falhar, o GitHub manda e-mail.
+name: Backup diário e manter ativo
+on:
+  schedule:
+    - cron: '17 9 * * *'   # 06:17 em Brasília
+  workflow_dispatch:
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Manter o Supabase ativo (acesso pela API)
+        run: |
+          curl -fsS -o /dev/null -w "API respondeu %{http_code}\n" "${{ vars.SUPABASE_URL }}/auth/v1/health" -H "apikey: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}"
+      - name: Cliente do Postgres 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: Backup criptografado
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+          SENHA: ${{ secrets.BACKUP_SENHA }}
+        run: |
+          set -euo pipefail
+          B=/usr/lib/postgresql/17/bin
+          D=backup_$(date -u +%Y-%m-%d)
+          mkdir $D
+          $B/pg_dump "$DB" -n public -n controle --no-owner --no-privileges -f $D/banco.sql
+          $B/pg_dump "$DB" --data-only -t auth.users -t auth.identities -t auth.mfa_factors -f $D/usuarios.sql
+          $B/psql "$DB" -tA -c "select 'lancamentos: ' || count(*) from public.lancamentos" | tee $D/conferencia.txt
+          tar czf - $D | gpg --batch --yes --pinentry-mode loopback --passphrase "$SENHA" --symmetric --cipher-algo AES256 -o $D.tar.gz.gpg
+          ls -la $D.tar.gz.gpg
+          echo "ARQ=$D.tar.gz.gpg" >> $GITHUB_ENV
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARQ }}
+          path: ${{ env.ARQ }}
+          retention-days: 90

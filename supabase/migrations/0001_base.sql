@@ -1,9 +1,8 @@
 -- Sistema Business · 0001 · estrutura base
--- RASCUNHO: não aplicar sem a autorização do Alexandre.
+-- Aplicada pela rotina do GitHub (.github/workflows/banco.yml) numa transação só (psql -1).
 -- Princípios: tudo fechado por padrão (RLS), nada é apagado de verdade (excluido_em),
 -- toda alteração fica na auditoria, e o banco avisa as telas em tempo real (publication supabase_realtime).
 
-begin;
 
 -- ---------------------------------------------------------------- perfis
 create table public.perfis (
@@ -247,5 +246,3 @@ create policy auditoria_ler on public.auditoria for select to authenticated usin
 -- ---------------------------------------------------------------- tempo real
 alter publication supabase_realtime add table
   public.contas, public.clientes, public.fornecedores, public.categorias, public.recorrencias, public.lancamentos;
-
-commit;

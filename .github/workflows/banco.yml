@@ -1,0 +1,41 @@
+# Aplica no Supabase cada arquivo novo de supabase/migrations (em ordem, cada um numa transação só).
+# Só roda depois do push para a main, e o push só acontece com o OK do Alexandre para aquela entrega.
+# Segredo necessário: SUPABASE_DB_URL (Connect > Session pooler > URI, com a senha do banco).
+name: Banco (migrações)
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**']
+  workflow_dispatch:
+concurrency: banco
+jobs:
+  migrar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cliente do Postgres 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: Aplicar migrações pendentes
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          PSQL=/usr/lib/postgresql/17/bin/psql
+          $PSQL "$DB" -v ON_ERROR_STOP=1 -q -c "create schema if not exists controle; revoke all on schema controle from public, anon, authenticated;
+            create table if not exists controle.migracoes (arquivo text primary key, aplicada_em timestamptz not null default now());"
+          # banco montado à mão antes desta rotina existir: marca a 0001 como já aplicada
+          $PSQL "$DB" -v ON_ERROR_STOP=1 -q -c "insert into controle.migracoes (arquivo)
+            select '0001_base.sql' where to_regclass('public.perfis') is not null on conflict do nothing;"
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            nome=$(basename "$f")
+            ja=$($PSQL "$DB" -tA -c "select 1 from controle.migracoes where arquivo = '$nome'")
+            if [ "$ja" = "1" ]; then echo "já aplicada: $nome"; continue; fi
+            echo "::group::aplicando $nome"
+            $PSQL "$DB" -v ON_ERROR_STOP=1 -1 -f "$f" -c "insert into controle.migracoes (arquivo) values ('$nome')"
+            echo "::endgroup::"
+          done
+          $PSQL "$DB" -c "select arquivo, aplicada_em from controle.migracoes order by arquivo"
