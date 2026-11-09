@@ -6,7 +6,8 @@ React + TypeScript (Vite) nas telas, Supabase (org "Sistema Business", conta con
 ## Regras que não se quebram
 - Nunca enviar ao GitHub (push, merge) sem o OK explícito do Alexandre para aquela entrega. Commit local pode.
 - O conector do Supabase NÃO enxerga este projeto (fica na org da Drogarema). Mudança de banco = arquivo novo em `supabase/migrations/NNNN_assunto.sql` (sem begin/commit), entregue também em /mnt/project-files/sistema-business/sql/ envolvido em begin/commit; o Alexandre roda à mão no SQL Editor (decisão de 09/11/2026). Script com dado pessoal ou que depende de edição à mão vai em `supabase/manual/`.
-- Acesso diário que impede a pausa do plano grátis: `.github/workflows/manter-ativo.yml` (só variáveis públicas). Backup é manual: `.github/workflows/backup.yml` (precisa dos segredos SUPABASE_DB_URL e BACKUP_SENHA), botão Run workflow.
+- Acesso diário que impede a pausa do plano grátis: `.github/workflows/manter-ativo.yml` (só variáveis públicas). Backup é manual: `.github/workflows/backup.yml` (precisa dos segredos SUPABASE_DB_URL e BACKUP_SENHA), botão Run workflow. O arquivo sai criptografado (gpg AES256): o repositório pode ficar público, então BACKUP_SENHA precisa ser forte.
+- Site: GitHub Pages pelo `.github/workflows/publicar.yml` a cada envio para a main (repositório público para o Pages grátis: nunca versionar dado de cliente). `base: './'` no Vite.
 - Testar toda migração antes num Postgres local (stub do schema `auth` + roles `anon`/`authenticated`), incluindo: sócio grava, usuário sem perfil não vê nada, contabilidade só lê, delete negado.
 
 ## Atualização automática (o erro da Drogarema não pode voltar)

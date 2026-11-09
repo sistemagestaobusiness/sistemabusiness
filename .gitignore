@@ -27,3 +27,5 @@ importacao*.sql
 dist-teste
 testes/*.png
 testes/*.json
+__pycache__/
+supabase/.temp/

@@ -15,6 +15,8 @@ function versaoJson(): Plugin {
 }
 
 export default defineConfig({
+  // caminho relativo: o site funciona em sistemagestaobusiness.github.io/sistemabusiness/ (as telas usam #endereço)
+  base: './',
   plugins: [react(), versaoJson()],
   define: { __VERSAO__: JSON.stringify(VERSAO) },
 })

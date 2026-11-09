@@ -1,13 +1,13 @@
 // Versão nova publicada: os arquivos das telas têm nome único a cada entrega (build do Vite),
 // então não existe tela velha presa no cache. Só o index.html poderia ficar velho numa aba aberta;
-// por isso a tela confere /versao.json (sem cache) ao voltar para a aba e a cada 5 minutos.
+// por isso a tela confere versao.json (sem cache) ao voltar para a aba e a cada 5 minutos.
 import { useEffect, useState } from 'react'
 
 declare const __VERSAO__: string
 
 async function lerVersao(): Promise<string | null> {
   try {
-    const r = await fetch(`/versao.json?t=${Date.now()}`, { cache: 'no-store' })
+    const r = await fetch(`${import.meta.env.BASE_URL}versao.json?t=${Date.now()}`, { cache: 'no-store' })
     if (!r.ok) return null
     return ((await r.json()) as { versao: string }).versao
   } catch { return null }
