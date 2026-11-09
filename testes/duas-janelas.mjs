@@ -59,6 +59,21 @@ try {
   await b.locator('text=alterado por outra pessoa').waitFor({ timeout: 3000 }).catch(() => {})
   ok(await b.locator('text=alterado por outra pessoa').count() === 1, 'edição ao mesmo tempo: B foi avisado em vez de sobrescrever A')
 
+  // visão por mês: B olha o ano fechado, A lança no dia a dia, o total do mês muda sozinho em B
+  await b.click('.janela >> text=Fechar')
+  await b.click('.alternar >> text=Meses')
+  const mesB = b.locator('tr', { hasText: 'Cliente Teste' }).locator('td.cel').nth(new Date().getMonth())
+  await mesB.waitFor()
+  ok((await mesB.textContent()).includes('2.000,00'), 'visão por mês soma o mês')
+  await celula(a).click()
+  await a.fill('input[placeholder^="1.234,56"]', '500'); await a.click('text=Salvar')
+  await b.waitForFunction(() => [...document.querySelectorAll('tr')].some((t) => t.textContent.includes('Cliente Teste') && t.textContent.includes('2.500,00')), null, { timeout: 3000 }).catch(() => {})
+  ok((await mesB.textContent()).includes('2.500,00'), 'visão por mês em B atualizou sozinha')
+  await b.screenshot({ path: 'testes/fluxo-meses.png' })
+  await mesB.click()
+  await celula(b).waitFor({ timeout: 3000 }).catch(() => {})
+  ok(await b.locator('.alternar button.ativo', { hasText: 'Dias' }).count() === 1 && await celula(b).count() === 1, 'clique no mês abre o dia a dia daquele mês')
+
   await a.screenshot({ path: 'testes/fluxo.png' })
 } finally {
   await browser.close(); srv.kill()
