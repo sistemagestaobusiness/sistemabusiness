@@ -30,7 +30,12 @@ function Clientes() {
     const limpo = Object.fromEntries(Object.entries(campos).map(([k, v]) => [k, v === '' ? null : v])) as never
     const r = id ? await supabase.from('clientes').update(limpo).eq('id', id) : await supabase.from('clientes').insert(limpo)
     if (r.error) { setMsg(r.error.message); return }
-    setF(VAZIO); setMsg('Salvo.')
+    // cliente encerrado: a linha dele sai do fluxo (fica arquivada, os lançamentos continuam no saldo); reativado: volta
+    if (id) {
+      const a = await supabase.from('categorias').update({ arquivada: f.situacao === 'ENCERRADO' } as never).eq('cliente_id', id)
+      if (a.error) { setMsg(a.error.message); return }
+    }
+    setF(VAZIO); setMsg(f.situacao === 'ENCERRADO' ? 'Salvo. A linha do cliente saiu do fluxo.' : 'Salvo.')
   }
   const lista = (clientes.dados ?? []).filter((c) => c.nome.toLowerCase().includes(busca.toLowerCase()))
   return (
@@ -92,7 +97,7 @@ function Linhas() {
   const secoes = [...new Set(lista.map((c) => c.secao))]
   return (
     <div>
-      <p className="sub">Linha arquivada sai da tela de fluxo, mas os lançamentos dela continuam no saldo. Se ela tiver lançamento no mês que você está vendo, aparece mesmo assim.</p>
+      <p className="sub">Linha arquivada sai da tela de fluxo, mas os lançamentos dela continuam no saldo: no fluxo eles aparecem somados na linha “Arquivadas (somadas)”. Cliente marcado como encerrado arquiva a linha dele sozinho.</p>
       <label className="check"><input type="checkbox" checked={verArquivadas} onChange={(e) => setVerArquivadas(e.target.checked)} /> mostrar arquivadas</label>
       {msg && <p className="aviso">{msg}</p>}
       <form className="filtros" onSubmit={criar}>

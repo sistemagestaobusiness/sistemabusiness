@@ -29,7 +29,11 @@ try {
   await b.goto(url)
   await a.waitForSelector('text=Cliente Teste'); await b.waitForSelector('text=Cliente Teste')
   ok(await b.locator('text=● ao vivo').count() === 1, 'indicador "ao vivo" na janela B')
-  ok(await a.locator('text=Cliente Antigo').count() === 1, 'linha arquivada com lançamento no mês continua aparecendo')
+  ok(await a.locator('text=Cliente Antigo').count() === 0, 'linha arquivada não aparece no fluxo')
+  ok((await a.locator('tr', { hasText: 'Arquivadas (somadas)' }).textContent()).includes('100,00'), 'movimento da arquivada aparece somado (o total continua batendo)')
+  await a.click('text=mostrar arquivadas')
+  ok(await a.locator('text=Cliente Antigo').count() === 1 && await a.locator('text=Arquivadas (somadas)').count() === 0, '"mostrar arquivadas" mostra a linha e tira a soma')
+  await a.click('text=mostrar arquivadas')
 
   // B abre a mesma célula que A vai lançar e começa a digitar
   const celula = (p) => p.locator('tr', { hasText: 'Cliente Teste' }).locator('td.cel').nth(9)

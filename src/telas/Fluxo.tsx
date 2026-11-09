@@ -59,9 +59,12 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
     return m
   }, [lancs.dados])
 
-  const comMovimento = useMemo(() => new Set((lancs.dados ?? []).map((l) => l.categoria_id)), [lancs.dados])
-  // arquivada some da grade, MAS aparece se tiver lançamento no mês (senão o saldo mudaria sem mostrar o porquê)
-  const visiveis = (cats.dados ?? []).filter((c) => mostrarArquivadas || !c.arquivada || comMovimento.has(c.id))
+  // arquivada some da grade; o que ela movimentou no período aparece somado numa linha só ("Arquivadas"),
+  // para o total e o saldo continuarem batendo com o que está na tela
+  const visiveis = (cats.dados ?? []).filter((c) => mostrarArquivadas || !c.arquivada)
+  const arquivadaDe = useMemo(() => new Map((cats.dados ?? []).map((c) => [c.id, c.arquivada])), [cats.dados])
+  const somaArquivadas = (dia: string, tipo: 'ENTRADA' | 'SAIDA') => mostrarArquivadas ? 0
+    : (lancs.dados ?? []).filter((l) => l.data === dia && arquivadaDe.get(l.categoria_id) && tipoDe.get(l.categoria_id) === tipo).reduce((a, l) => a + Number(l.valor), 0)
   const tipoDe = useMemo(() => new Map((cats.dados ?? []).map((c) => [c.id, c.tipo])), [cats.dados])
 
   const totalDia = (dia: string, tipo: 'ENTRADA' | 'SAIDA') =>
@@ -108,6 +111,15 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
           {cs.map(linha)}
         </tbody>
       ))}
+      {dias.some((d) => somaArquivadas(d, tipo)) && (
+        <tbody>
+          <tr className="arquivada">
+            <th className="fixa" title="Linhas arquivadas que tiveram movimento no mês. Marque 'mostrar arquivadas' para ver uma a uma.">Arquivadas (somadas)</th>
+            {dias.map((d) => { const v = somaArquivadas(d, tipo); return <td key={d}>{v ? moeda(v) : ''}</td> })}
+            <td className="total">{moeda(dias.reduce((a, d) => a + somaArquivadas(d, tipo), 0))}</td>
+          </tr>
+        </tbody>
+      )}
       <tbody>
         <tr className="soma">
           <th className="fixa">{titulo}</th>
@@ -202,8 +214,18 @@ function FluxoMeses({ mostrarArquivadas, topo, abrirMes }: PropsMeses) {
     }
     return m
   }, [lancs.dados])
-  const comMovimento = useMemo(() => new Set((lancs.dados ?? []).filter((l) => cols.some((c) => l.data.startsWith(c.chave))).map((l) => l.categoria_id)), [lancs.dados, cols])
-  const visiveis = (cats.dados ?? []).filter((c) => mostrarArquivadas || !c.arquivada || comMovimento.has(c.id))
+  // arquivada some; o movimento dela fica somado na linha "Arquivadas (somadas)"
+  const visiveis = (cats.dados ?? []).filter((c) => mostrarArquivadas || !c.arquivada)
+  const arquivadas = useMemo(() => {
+    const m = new Map<string, number>()
+    if (mostrarArquivadas) return m
+    const arq = new Map((cats.dados ?? []).map((c) => [c.id, c]))
+    for (const l of lancs.dados ?? []) {
+      const c = arq.get(l.categoria_id); if (!c?.arquivada) continue
+      for (const k of [`${c.tipo}|${l.data.slice(0, 7)}`, `${c.tipo}|${l.data.slice(0, 4)}`]) m.set(k, (m.get(k) ?? 0) + Number(l.valor))
+    }
+    return m
+  }, [cats.dados, lancs.dados, mostrarArquivadas])
   const tipoDe = useMemo(() => new Map((cats.dados ?? []).map((c) => [c.id, c.tipo])), [cats.dados])
 
   // totais por mês (todos os meses dos anos buscados) e saldo no fim de cada mês
@@ -264,6 +286,16 @@ function FluxoMeses({ mostrarArquivadas, topo, abrirMes }: PropsMeses) {
           {cs.map(linha)}
         </tbody>
       ))}
+      {cols.some((k) => arquivadas.get(`${tipo}|${k.chave}`)) && (
+        <tbody>
+          <tr className="arquivada">
+            <th className="fixa" title="Linhas arquivadas que tiveram movimento. Marque 'mostrar arquivadas' para ver uma a uma.">Arquivadas (somadas)</th>
+            {cols.map((k) => <td key={k.chave}>{vazio(arquivadas.get(`${tipo}|${k.chave}`) ?? 0)}</td>)}
+            <td className="total">{vazio(cols.reduce((x, k) => x + (arquivadas.get(`${tipo}|${k.chave}`) ?? 0), 0))}</td>
+            {anos.map((a) => <td key={a} className="total ano">{vazio(arquivadas.get(`${tipo}|${a}`) ?? 0)}</td>)}
+          </tr>
+        </tbody>
+      )}
       <tbody>
         <tr className="soma">
           <th className="fixa">{titulo}</th>
