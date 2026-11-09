@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAoVivo } from '../lib/vivo'
 import { dataBR, isoDia, lerValor, moeda } from '../lib/formato'
@@ -89,10 +89,15 @@ export function Conciliacao() {
   const conciliar = async (linha: number, lanc: number) => {
     const { error } = await supabase.rpc('fn_conciliar', { p_linha: linha, p_lancamento: lanc })
     if (error) setMsg(error.message)
+    return !error
   }
+  const [conciliandoTodas, setConciliandoTodas] = useState(false)
   const conciliarTodas = async () => {
-    for (const l of certeiras) await conciliar(l.id, sugestoes.get(l.id)![0].id)
-    setMsg(`${certeiras.length} linhas conciliadas.`)
+    setConciliandoTodas(true)
+    let ok = 0
+    for (const l of certeiras) if (await conciliar(l.id, sugestoes.get(l.id)![0].id)) ok++
+    setConciliandoTodas(false)
+    setMsg(`${ok} linhas conciliadas.`)
   }
 
   return (
@@ -103,7 +108,7 @@ export function Conciliacao() {
           {(contas.dados ?? []).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
         <label>Importar a partir de<input type="date" value={desde} onChange={(e) => setAPartirDe(e.target.value)} /></label>
         <label>Extrato OFX do C6<input type="file" accept=".ofx,.OFX" onChange={(e) => { const f = e.target.files?.[0]; if (f) importar(f); e.target.value = '' }} /></label>
-        {certeiras.length > 0 && <button className="primario" onClick={conciliarTodas}>Conciliar as {certeiras.length} sugestões certeiras</button>}
+        {certeiras.length > 0 && <button className="primario" disabled={conciliandoTodas} onClick={conciliarTodas}>Conciliar as {certeiras.length} sugestões certeiras</button>}
       </div>
       {msg && <p className="sub">{msg}</p>}
       {(linhas.erro || lancs.erro) && <p className="aviso">{linhas.erro || lancs.erro}</p>}
@@ -147,23 +152,40 @@ export function Conciliacao() {
 
 function LinhaPendente({ linha, cands, cats, tipo, abertos, sugestaoCat, conciliar, erro }: {
   linha: LinhaExtrato; cands: Lancamento[]; cats: Categoria[]; tipo: Map<number, Categoria>; abertos: Lancamento[]; sugestaoCat?: number
-  conciliar: (linha: number, lanc: number) => Promise<void>; erro: (m: string) => void
+  conciliar: (linha: number, lanc: number) => Promise<boolean>; erro: (m: string) => void
 }) {
   const entrada = linha.valor > 0
   const [cat, setCat] = useState(sugestaoCat ? String(sugestaoCat) : '')
   const [dividindo, setDividindo] = useState(false)
+  // Enquanto grava, os botões ficam travados: clique repetido criava lançamentos em dobro (caso AMIL 07/10/2026).
+  // Depois de conciliar, continua travado até a linha sumir da lista.
+  const [ocupado, setOcupadoTela] = useState(false)
+  const travado = useRef(false) // a trava vale já no clique seguinte, antes de a tela redesenhar
+  const setOcupado = (v: boolean) => { travado.current = v; setOcupadoTela(v) }
   // só linhas ativas: arquivada (cliente encerrado, linha antiga) não aparece para escolher
   const opcoes = cats.filter((c) => (c.tipo === 'ENTRADA') === entrada && !c.arquivada)
   // Pix enviado para a Cora (Alexandre) ou o Nubank (Rodrigo) = pró-labore: um clique cria e concilia na linha certa.
   // O extrato do C6 não traz o nome de quem recebeu o Pix, por isso a escolha é de quem concilia.
   const prolabore = entrada ? [] : cats.filter((c) => c.tipo === 'SAIDA' && !c.arquivada && /pr[oó].?labore/i.test(c.nome))
+  const conciliarCom = async (lanc: number) => {
+    if (travado.current) return
+    setOcupado(true)
+    if (!(await conciliar(linha.id, lanc))) setOcupado(false)
+  }
   const criar = async (categoria = cat) => {
+    if (travado.current) return
     if (!categoria) { erro('Escolha a linha do fluxo para criar o lançamento.'); return }
+    setOcupado(true)
     const { data, error } = await supabase.from('lancamentos').insert({
       data: linha.data, valor: Math.abs(linha.valor), categoria_id: Number(categoria), conta_id: linha.conta_id, descricao: linha.descricao, status: 'REALIZADO',
     } as never).select('id').single()
-    if (error) { erro(error.message); return }
-    await conciliar(linha.id, (data as { id: number }).id)
+    if (error) { erro(error.message); setOcupado(false); return }
+    const id = (data as { id: number }).id
+    if (!(await conciliar(linha.id, id))) {
+      // não conciliou: o lançamento recém-criado vai para a lixeira, senão fica solto e duplica o valor no fluxo
+      await supabase.from('lancamentos').update({ excluido_em: new Date().toISOString() } as never).eq('id', id)
+      setOcupado(false)
+    }
   }
   const ignorar = async () => {
     const { error } = await supabase.from('extrato_linhas').update({ ignorada: true } as never).eq('id', linha.id)
@@ -177,20 +199,20 @@ function LinhaPendente({ linha, cands, cats, tipo, abertos, sugestaoCat, concili
       <td>
         {cands.slice(0, 3).map((c) => (
           <div key={c.id} className="cand">
-            <button className="link" onClick={() => conciliar(linha.id, c.id)}>conciliar com</button>
+            <button className="link" disabled={ocupado} onClick={() => conciliarCom(c.id)}>conciliar com</button>
             {tipo.get(c.categoria_id)?.nome} · {dataBR(c.data)} · {moeda(Number(c.valor))} <span className={`status s-${c.status.toLowerCase()}`}>{c.status.toLowerCase()}</span>
           </div>
         ))}
         <div className="cand">
           <SelectCategoria cats={opcoes} value={cat} onChange={setCat} vazio={cands.length ? 'ou criar novo em…' : 'criar lançamento em…'} />
-          <button className="link" onClick={() => criar()}>criar e conciliar</button>
+          <button className="link" disabled={ocupado} onClick={() => criar()}>{ocupado ? 'gravando…' : 'criar e conciliar'}</button>
           <button className="link" onClick={() => setDividindo(!dividindo)} title="Um movimento do extrato vira vários lançamentos (ex.: fatura do cartão, crédito de vários clientes)">dividir</button>
           <button className="link" onClick={ignorar} title="Só para o que não é movimento da empresa (ex.: Pix recusado e estornado)">ignorar</button>
         </div>
         {dividindo && <Dividir linha={linha} opcoes={opcoes} abertos={abertos} tipo={tipo} erro={erro} fechar={() => setDividindo(false)} />}
         {!dividindo && cands.length === 0 && prolabore.length > 0 && (
           <div className="cand prolabore">é pró-labore:
-            {prolabore.map((c) => <button key={c.id} className="chip" style={c.cor ? { background: c.cor } : undefined} onClick={() => criar(String(c.id))}>{c.nome}</button>)}
+            {prolabore.map((c) => <button key={c.id} className="chip" disabled={ocupado} style={c.cor ? { background: c.cor } : undefined} onClick={() => criar(String(c.id))}>{c.nome}</button>)}
           </div>
         )}
       </td>

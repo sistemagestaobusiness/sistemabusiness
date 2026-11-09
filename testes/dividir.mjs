@@ -30,7 +30,8 @@ try {
         { id: 2, data: '2026-10-12', valor: 2000, categoria_id: 2, status: 'PREVISTO', versao: 1, excluido_em: null }],
       extrato_linhas: [
         { id: 1, conta_id: 1, fitid: 'f1', data: '2026-10-14', valor: -1788.2, descricao: 'CARTOES CAIXA VISA PJ', lancamento_id: null, ignorada: false, dividida: false },
-        { id: 2, conta_id: 1, fitid: 'f2', data: '2026-10-13', valor: 6090.37, descricao: 'Ref. Liq. Boleto Comp Externo', lancamento_id: null, ignorada: false, dividida: false }],
+        { id: 2, conta_id: 1, fitid: 'f2', data: '2026-10-13', valor: 6090.37, descricao: 'Ref. Liq. Boleto Comp Externo', lancamento_id: null, ignorada: false, dividida: false },
+        { id: 3, conta_id: 1, fitid: 'f3', data: '2026-10-07', valor: -2109.38, descricao: 'AMIL ASSISTENCIA ME', lancamento_id: null, ignorada: false, dividida: false }],
     }
     for (const [t, v] of Object.entries(s)) localStorage.setItem('sim_' + t, JSON.stringify(v))
   })
@@ -73,6 +74,15 @@ try {
   const ls = await a.evaluate(() => JSON.parse(localStorage.getItem('sim_lancamentos')))
   ok(ls.filter((l) => l.status === 'CONCILIADO').length === 6, 'cartão virou 3 lançamentos e o crédito usou os 2 previstos + 1 novo')
   ok(ls.find((l) => l.id === 1).status === 'CONCILIADO' && ls.find((l) => l.id === 1).data === '2026-10-13', 'previsto do cliente ficou conciliado na data do extrato')
+
+  // clique repetido no pró-labore (caso AMIL): só um lançamento
+  const amil = (p) => p.locator('tr', { hasText: 'AMIL ASSISTENCIA' })
+  await amil(a).locator('button.chip', { hasText: 'Prolabore Rodrigo' }).evaluate((el) => { el.click(); el.click(); el.click() })
+  await amil(a).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+  await a.waitForTimeout(500)
+  const amis = (await a.evaluate(() => JSON.parse(localStorage.getItem('sim_lancamentos')))).filter((l) => l.descricao === 'AMIL ASSISTENCIA ME' && !l.excluido_em)
+  ok(amis.length === 1 && amis[0].status === 'CONCILIADO', `três cliques no pró-labore criam um lançamento só (${amis.length})`)
+
   await a.click('text=ver conciliadas e ignoradas')
   ok(await a.locator('text=dividida em vários lançamentos').count() === 2, 'aparece em "conciliadas" como dividida')
 } catch (e) { falhas.push(String(e)); console.log('✗ ' + e) } finally { await browser.close(); srv.kill() }
