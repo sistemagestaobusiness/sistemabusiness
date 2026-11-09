@@ -29,14 +29,25 @@ function Clientes() {
     e.preventDefault(); setMsg('')
     const { id, ...campos } = f
     const limpo = Object.fromEntries(Object.entries(campos).map(([k, v]) => [k, v === '' ? null : v])) as never
-    const r = id ? await supabase.from('clientes').update(limpo).eq('id', id) : await supabase.from('clientes').insert(limpo)
+    const r = id ? await supabase.from('clientes').update(limpo).eq('id', id).select('id').single()
+      : await supabase.from('clientes').insert(limpo).select('id').single()
     if (r.error) { setMsg(r.error.message); return }
-    // cliente encerrado: a linha dele sai do fluxo (fica arquivada, os lançamentos continuam no saldo); reativado: volta
-    if (id) {
-      const a = await supabase.from('categorias').update({ arquivada: f.situacao === 'ENCERRADO' } as never).eq('cliente_id', id)
+    const cid = (r.data as { id: number }).id
+    // todo cliente tem a sua linha no fluxo (seção Clientes): é nela que entram os recebimentos e as projeções.
+    // Encerrado: a linha sai do fluxo (fica arquivada, os lançamentos continuam no saldo); reativado: volta.
+    const linhas = await dados<Categoria[]>(supabase.from('categorias').select('*').eq('cliente_id', cid))
+    const arquivada = f.situacao === 'ENCERRADO'
+    if (linhas.length) {
+      const a = await supabase.from('categorias').update({ arquivada } as never).eq('cliente_id', cid)
       if (a.error) { setMsg(a.error.message); return }
+    } else {
+      const ult = await dados<{ ordem: number }[]>(supabase.from('categorias').select('ordem').eq('secao', 'Clientes').order('ordem', { ascending: false }).limit(1))
+      const n = await supabase.from('categorias').insert({
+        nome: f.nome.trim(), tipo: 'ENTRADA', secao: 'Clientes', ordem: (ult[0]?.ordem ?? 0) + 1, arquivada, cliente_id: cid,
+      } as never)
+      if (n.error) { setMsg(n.error.message); return }
     }
-    setF(VAZIO); setMsg(f.situacao === 'ENCERRADO' ? 'Salvo. A linha do cliente saiu do fluxo.' : 'Salvo.')
+    setF(VAZIO); setMsg(arquivada ? 'Salvo. A linha do cliente saiu do fluxo.' : linhas.length ? 'Salvo.' : 'Salvo. O cliente ganhou a linha dele no fluxo (seção Clientes).')
   }
   const lista = (clientes.dados ?? []).filter((c) => c.nome.toLowerCase().includes(busca.toLowerCase())
     && (situacao === 'TODOS' || c.situacao === situacao))
