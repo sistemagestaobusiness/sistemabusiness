@@ -151,10 +151,13 @@ function LinhaPendente({ linha, cands, cats, tipo, sugestaoCat, conciliar, erro 
   const entrada = linha.valor > 0
   const [cat, setCat] = useState(sugestaoCat ? String(sugestaoCat) : '')
   const opcoes = cats.filter((c) => (c.tipo === 'ENTRADA') === entrada)
-  const criar = async () => {
-    if (!cat) { erro('Escolha a linha do fluxo para criar o lançamento.'); return }
+  // Pix enviado para a Cora (Alexandre) ou o Nubank (Rodrigo) = pró-labore: um clique cria e concilia na linha certa.
+  // O extrato do C6 não traz o nome de quem recebeu o Pix, por isso a escolha é de quem concilia.
+  const prolabore = entrada ? [] : cats.filter((c) => c.tipo === 'SAIDA' && !c.arquivada && /pr[oó].?labore/i.test(c.nome))
+  const criar = async (categoria = cat) => {
+    if (!categoria) { erro('Escolha a linha do fluxo para criar o lançamento.'); return }
     const { data, error } = await supabase.from('lancamentos').insert({
-      data: linha.data, valor: Math.abs(linha.valor), categoria_id: Number(cat), conta_id: linha.conta_id, descricao: linha.descricao, status: 'REALIZADO',
+      data: linha.data, valor: Math.abs(linha.valor), categoria_id: Number(categoria), conta_id: linha.conta_id, descricao: linha.descricao, status: 'REALIZADO',
     } as never).select('id').single()
     if (error) { erro(error.message); return }
     await conciliar(linha.id, (data as { id: number }).id)
@@ -177,9 +180,14 @@ function LinhaPendente({ linha, cands, cats, tipo, sugestaoCat, conciliar, erro 
         ))}
         <div className="cand">
           <SelectCategoria cats={opcoes} value={cat} onChange={setCat} vazio={cands.length ? 'ou criar novo em…' : 'criar lançamento em…'} />
-          <button className="link" onClick={criar}>criar e conciliar</button>
-          <button className="link" onClick={ignorar} title="Ex.: transferência entre contas próprias">ignorar</button>
+          <button className="link" onClick={() => criar()}>criar e conciliar</button>
+          <button className="link" onClick={ignorar} title="Só para o que não é movimento da empresa (ex.: Pix recusado e estornado)">ignorar</button>
         </div>
+        {cands.length === 0 && prolabore.length > 0 && (
+          <div className="cand prolabore">é pró-labore:
+            {prolabore.map((c) => <button key={c.id} className="chip" style={c.cor ? { background: c.cor } : undefined} onClick={() => criar(String(c.id))}>{c.nome}</button>)}
+          </div>
+        )}
       </td>
     </tr>
   )

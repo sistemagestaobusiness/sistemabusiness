@@ -107,3 +107,5 @@ button.primario { background: var(--verde); color: #fff; border: 0; height: 36px
 tr.clicavel { cursor: pointer; }
 tr.clicavel:hover td { background: var(--linha); }
 .acoes button.link.perigo { color: var(--verm); margin-right: auto; }
+.cand.prolabore { display: flex; align-items: center; gap: 6px; color: var(--sub); font-size: 12px; }
+button.chip { padding: 2px 10px; border-radius: 999px; font-size: 12px; }
