@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { veioDoLinkDeSenha } from '../lib/linkSenha'
+export { erroDoLink } from '../lib/linkSenha'
 
-export type Etapa = 'carregando' | 'entrar' | 'dentro'
+export type Etapa = 'carregando' | 'entrar' | 'nova-senha' | 'dentro'
 
 // Login com e-mail e senha (como na Drogarema). Quem protege os dados é o banco: sem perfil cadastrado, não vê nada.
 export function useSessao() {
   const [sessao, setSessao] = useState<Session | null>(null)
   const [etapa, setEtapa] = useState<Etapa>('carregando')
   useEffect(() => {
-    const avaliar = (s: Session | null) => { setSessao(s); setEtapa(s ? 'dentro' : 'entrar') }
+    let recuperando = veioDoLinkDeSenha
+    const avaliar = (s: Session | null) => { setSessao(s); setEtapa(!s ? 'entrar' : recuperando ? 'nova-senha' : 'dentro') }
     supabase.auth.getSession().then(({ data }) => avaliar(data.session))
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => avaliar(s))
+    const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
+      if (evento === 'PASSWORD_RECOVERY') recuperando = true
+      if (evento === 'USER_UPDATED' || evento === 'SIGNED_OUT') recuperando = false
+      avaliar(s)
+    })
     return () => sub.subscription.unsubscribe()
   }, [])
   return { sessao, etapa }

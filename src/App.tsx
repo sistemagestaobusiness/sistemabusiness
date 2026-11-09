@@ -3,7 +3,7 @@ import { configurado, supabase } from './lib/supabase'
 import { desligarTempoReal, ligarTempoReal, useEstadoTempoReal } from './lib/vivo'
 import { useVersaoNova } from './lib/versao'
 import { useInatividade, useSessao } from './auth/sessao'
-import { Login } from './auth/Login'
+import { FormSenha, Login } from './auth/Login'
 import { Fluxo } from './telas/Fluxo'
 import { Lancamentos } from './telas/Lancamentos'
 import { Cadastros } from './telas/Cadastros'
@@ -17,6 +17,8 @@ export default function App() {
   const { sessao, etapa } = useSessao()
   const versaoNova = useVersaoNova()
   const saindo = useInatividade(etapa === 'dentro')
+  const [trocandoSenha, setTrocandoSenha] = useState(false)
+  const [senhaTrocada, setSenhaTrocada] = useState(false)
   const [tela, setTela] = useState<Tela>(telaDoEndereco)
   useEffect(() => { const f = () => setTela(telaDoEndereco()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
 
@@ -40,8 +42,18 @@ export default function App() {
         <nav>{(Object.keys(TELAS) as Tela[]).map((t) => <a key={t} href={`#${t}`} className={tela === t ? 'ativo' : ''}>{TELAS[t]}</a>)}</nav>
         <IndicadorAoVivo />
         <span className="usuario">{sessao?.user.email}</span>
+        <button className="link" onClick={() => { setTrocandoSenha(true); setSenhaTrocada(false) }}>Trocar senha</button>
         <button className="link" onClick={() => supabase.auth.signOut()}>Sair</button>
       </header>
+      {trocandoSenha && (
+        <div className="fundo" onClick={() => setTrocandoSenha(false)}>
+          <div className="janela login-card" onClick={(e) => e.stopPropagation()}>
+            <header><strong>Trocar senha</strong><button className="link" onClick={() => setTrocandoSenha(false)}>Fechar</button></header>
+            {senhaTrocada ? <p>Senha trocada. Use a nova no próximo acesso.</p>
+              : <FormSenha emailAtual={sessao?.user.email} aoTerminar={() => setSenhaTrocada(true)} />}
+          </div>
+        </div>
+      )}
       <main>{tela === 'fluxo' ? <Fluxo /> : tela === 'lancamentos' ? <Lancamentos /> : tela === 'conciliacao' ? <Conciliacao /> : <Cadastros />}</main>
     </div>
   )

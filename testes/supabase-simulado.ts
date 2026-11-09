@@ -89,6 +89,10 @@ export const supabase = {
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     mfa: { getAuthenticatorAssuranceLevel: async () => ({ data: { currentLevel: 'aal2', nextLevel: 'aal2' } }) },
     signOut: async () => ({}),
+    // senha certa no simulado: 'atual1234'
+    signInWithPassword: async ({ password }: { password: string }) => ({ error: password === 'atual1234' ? null : { message: 'Invalid login credentials' } }),
+    updateUser: async ({ password }: { password: string }) => { localStorage.setItem('sim_senha_nova', password); return { data: {}, error: null } },
+    resetPasswordForEmail: async () => ({ error: null }),
   },
   channel: () => {
     const c = {
