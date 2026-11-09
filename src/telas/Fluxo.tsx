@@ -4,6 +4,10 @@ import { useAoVivo } from '../lib/vivo'
 import { dataBR, diasDoMes, isoDia, lerValor, moeda } from '../lib/formato'
 
 import { dados, todas, type Categoria, type Lancamento } from '../lib/tipos'
+import { feriado, fimDeSemana, proximoDiaUtil, siglaDia } from '../lib/feriados'
+
+// sábado, domingo e feriado ficam com a coluna cinza (o banco não compensa nesses dias)
+const classeDia = (d: string) => (feriado(d) ? 'feriado' : fimDeSemana(d) ? 'fds' : '')
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
@@ -92,7 +96,7 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
           const v = ls.reduce((x, l) => x + Number(l.valor), 0)
           const previsto = ls.length > 0 && ls.every((l) => l.status === 'PREVISTO')
           return (
-            <td key={d} className={`cel ${previsto ? 'previsto' : ''} ${d === hojeIso ? 'hoje' : ''}`}
+            <td key={d} className={`cel ${previsto ? 'previsto' : ''} ${d === hojeIso ? 'hoje' : ''} ${classeDia(d)}`}
                 onClick={() => setCelula({ categoria: c, dia: d })} title={ls.map((l) => l.descricao).filter(Boolean).join('\n')}>
               {v ? moeda(v) : ''}
             </td>
@@ -115,7 +119,7 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
         <tbody>
           <tr className="arquivada">
             <th className="fixa" title="Linhas arquivadas que tiveram movimento no mês. Marque 'mostrar arquivadas' para ver uma a uma.">Arquivadas (somadas)</th>
-            {dias.map((d) => { const v = somaArquivadas(d, tipo); return <td key={d}>{v ? moeda(v) : ''}</td> })}
+            {dias.map((d) => { const v = somaArquivadas(d, tipo); return <td key={d} className={classeDia(d)}>{v ? moeda(v) : ''}</td> })}
             <td className="total">{moeda(dias.reduce((a, d) => a + somaArquivadas(d, tipo), 0))}</td>
           </tr>
         </tbody>
@@ -123,7 +127,7 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
       <tbody>
         <tr className="soma">
           <th className="fixa">{titulo}</th>
-          {dias.map((d) => { const v = totalDia(d, tipo); return <td key={d}>{v ? moeda(v) : ''}</td> })}
+          {dias.map((d) => { const v = totalDia(d, tipo); return <td key={d} className={classeDia(d)}>{v ? moeda(v) : ''}</td> })}
           <td className="total">{moeda(dias.reduce((a, d) => a + totalDia(d, tipo), 0))}</td>
         </tr>
       </tbody>
@@ -145,7 +149,11 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
         <table>
           <thead>
             <tr><th className="fixa">Saldo inicial: {moeda(Number(saldoIni.dados ?? 0))}</th>
-              {dias.map((d) => <th key={d} className={d === hojeIso ? 'hoje' : ''}>{d.slice(8)}</th>)}
+              {dias.map((d) => (
+                <th key={d} className={`${d === hojeIso ? 'hoje' : ''} ${classeDia(d)}`} title={feriado(d) ?? undefined}>
+                  {d.slice(8)}<small>{feriado(d) ? 'feriado' : siglaDia(d)}</small>
+                </th>
+              ))}
               <th>Total</th></tr>
           </thead>
           {blocoTipo('ENTRADA', 'Total entradas')}
@@ -153,7 +161,7 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
           <tbody>
             <tr className="saldo">
               <th className="fixa">Saldo</th>
-              {saldos.map((s, i) => <td key={dias[i]} className={s < 0 ? 'neg' : ''}>{moeda(s)}</td>)}
+              {saldos.map((s, i) => <td key={dias[i]} className={`${s < 0 ? 'neg' : ''} ${classeDia(dias[i])}`}>{moeda(s)}</td>)}
               <td className="total">{moeda(saldos[saldos.length - 1] ?? 0)}</td>
             </tr>
           </tbody>
@@ -387,7 +395,7 @@ function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Cate
   return (
     <div className="fundo" onClick={fechar}>
       <div className="janela" onClick={(e) => e.stopPropagation()}>
-        <header><div><strong>{categoria.nome}</strong><span>{dataBR(dia)} · {categoria.tipo === 'ENTRADA' ? 'Entrada' : 'Pagamento'}</span></div>
+        <header><div><strong>{categoria.nome}</strong><span>{dataBR(dia)} · {siglaDia(dia)}{feriado(dia) ? ` · ${feriado(dia)}` : ''} · {categoria.tipo === 'ENTRADA' ? 'Entrada' : 'Pagamento'}</span></div>
           <button className="link" onClick={fechar}>Fechar</button></header>
         {lancamentos.length > 0 && (
           <ul className="lista">
@@ -411,6 +419,7 @@ function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Cate
               <option value="PREVISTO">Previsto</option><option value="REALIZADO">Realizado</option><option value="CONCILIADO">Conciliado</option>
             </select>
           </label>
+          {status === 'PREVISTO' && proximoDiaUtil(dia) !== dia && <p className="sub">Previsto em dia sem compensação: vai para {dataBR(proximoDiaUtil(dia))}, o próximo dia útil.</p>}
           {msg && <p className="aviso">{msg}</p>}
           <div className="acoes">{editando && <button type="button" className="link" onClick={limpar}>Cancelar edição</button>}<button>Salvar</button></div>
         </form>

@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAoVivo } from '../lib/vivo'
 import { dataBR, isoDia, lerValor, moeda } from '../lib/formato'
+import { proximoDiaUtil } from '../lib/feriados'
 import { dados, todas, type Categoria, type Lancamento, type Recorrencia, type Status } from '../lib/tipos'
 
 export function Lancamentos() {
@@ -132,6 +133,7 @@ function JanelaLancamento({ original, cats, fechar }: { original: Lancamento | n
               <option value="PREVISTO">Previsto</option><option value="REALIZADO">Realizado</option><option value="CONCILIADO">Conciliado</option>
             </select>
           </label>
+          {status === 'PREVISTO' && data && proximoDiaUtil(data) !== data && <p className="sub">Previsto em dia sem compensação: vai para {dataBR(proximoDiaUtil(data))}, o próximo dia útil.</p>}
           {msg && <p className="aviso">{msg}</p>}
           <div className="acoes">{original && <button type="button" className="link perigo" onClick={excluir}>Excluir</button>}<button>Salvar</button></div>
         </form>

@@ -119,3 +119,8 @@ button.chip { padding: 2px 10px; border-radius: 999px; font-size: 12px; }
 .dividir .parte input.valor { width: 110px; text-align: right; }
 .dividir .cand { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--sub); font-size: 12px; }
 .dividir button.primario { height: 30px; padding: 0 12px; }
+.grade thead th small { display: block; font-size: 10px; font-weight: 400; color: var(--sub); }
+.grade td.fds, .grade td.feriado { background: #eceef2; }
+.grade th.fds, .grade th.feriado { background: #e4e7ec; }
+.grade td.feriado, .grade th.feriado { background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(180, 35, 24, .06) 6px 8px); }
+.grade th.feriado small { color: var(--verm); }
