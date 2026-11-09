@@ -92,6 +92,26 @@ function rpc(nome: string, p: Record<string, unknown>) {
     avisar('lancamentos'); avisar('extrato_linhas')
     return Promise.resolve({ data: partes.length, error: null })
   }
+  if (nome === 'fn_saldo_banco') {
+    // igual ao SQL 0005: saldo informado + extrato até o dia − extrato até o dia informado
+    const r: { data: string; saldo: number }[] = []
+    const ex = ler('extrato_linhas')
+    for (let d = String(p.p_ini); d <= String(p.p_fim); d = new Date(Date.parse(d + 'T12:00:00Z') + 86_400_000).toISOString().slice(0, 10)) {
+      let soma: number | null = null
+      for (const c of ler('contas').filter((c) => c.saldo_banco != null && c.saldo_banco_em)) {
+        const ls = ex.filter((e) => e.conta_id === c.id)
+        if (!ls.length) continue
+        const datas = ls.map((e) => String(e.data)).sort()
+        const de = new Date(Date.parse(datas[0] + 'T12:00:00Z') - 86_400_000).toISOString().slice(0, 10)
+        const ate = [datas[datas.length - 1], String(c.saldo_banco_em)].sort()[1]
+        if (d < de || d > ate) continue
+        const ateDia = (x: string) => ls.filter((e) => String(e.data) <= x).reduce((a, e) => a + Number(e.valor), 0)
+        soma = (soma ?? 0) + Number(c.saldo_banco) + ateDia(d) - ateDia(String(c.saldo_banco_em))
+      }
+      if (soma !== null) r.push({ data: d, saldo: Math.round(soma * 100) / 100 })
+    }
+    return Promise.resolve({ data: r, error: null })
+  }
   return Promise.resolve({ data: 0, error: null })
 }
 

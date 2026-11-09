@@ -12,7 +12,7 @@ export function Conciliacao() {
   const [contaId, setContaId] = useState('')
   const [msg, setMsg] = useState('')
   const [verFeitas, setVerFeitas] = useState(false)
-  const contas = useAoVivo(['contas'], () => dados<Conta[]>(supabase.from('contas').select('id,nome,ativa,ordem').order('ordem').order('id')))
+  const contas = useAoVivo(['contas'], () => dados<Conta[]>(supabase.from('contas').select('id,nome,ativa,ordem,saldo_banco,saldo_banco_em').order('ordem').order('id')))
   const conta = contaId || String(contas.dados?.[0]?.id ?? '')
   const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
   const linhas = useAoVivo(['extrato_linhas'], () => todas<LinhaExtrato>((a, b) =>
@@ -110,6 +110,7 @@ export function Conciliacao() {
         <label>Extrato OFX do C6<input type="file" accept=".ofx,.OFX" onChange={(e) => { const f = e.target.files?.[0]; if (f) importar(f); e.target.value = '' }} /></label>
         {certeiras.length > 0 && <button className="primario" disabled={conciliandoTodas} onClick={conciliarTodas}>Conciliar as {certeiras.length} sugestões certeiras</button>}
       </div>
+      {contas.dados?.find((c) => String(c.id) === conta) && <SaldoBanco conta={contas.dados.find((c) => String(c.id) === conta)!} />}
       {msg && <p className="sub">{msg}</p>}
       {(linhas.erro || lancs.erro) && <p className="aviso">{linhas.erro || lancs.erro}</p>}
       <p className="sub">Certeira = um único lançamento não conciliado com o mesmo valor, mesmo tipo e até 3 dias de diferença. Ao conciliar, o lançamento fica com a data e o valor do extrato.</p>
@@ -147,6 +148,34 @@ export function Conciliacao() {
         </div>
       )}
     </section>
+  )
+}
+
+// O OFX do C6 não traz o saldo da conta: o sócio informa o saldo do app do banco num dia e o fluxo
+// calcula o saldo do banco dos outros dias pelas linhas do extrato (fn_saldo_banco), para comparar com o saldo do sistema.
+function SaldoBanco({ conta }: { conta: Conta }) {
+  const [valor, setValor] = useState('')
+  const [dia, setDia] = useState(() => isoDia(new Date()))
+  const [aviso, setAviso] = useState('')
+  const [gravando, setGravando] = useState(false)
+  const gravar = async () => {
+    const v = lerValor(valor)
+    if (v === null) { setAviso('Digite o saldo como aparece no app do banco, ex.: 12.345,67 (negativo com -).'); return }
+    setGravando(true)
+    const { error } = await supabase.from('contas').update({ saldo_banco: v, saldo_banco_em: dia } as never).eq('id', conta.id)
+    setGravando(false)
+    if (error) { setAviso(error.message); return }
+    setValor(''); setAviso('Gravado. O Fluxo de caixa mostra o saldo do banco e a diferença dia a dia.')
+  }
+  return (
+    <div className="filtros saldo-banco">
+      <span>Saldo do {conta.nome} no app do banco{conta.saldo_banco !== null && conta.saldo_banco_em
+        ? <>: <strong>{moeda(Number(conta.saldo_banco))}</strong> no fim de {dataBR(conta.saldo_banco_em)}</> : ': ainda não informado'}</span>
+      <label>Novo saldo<input className="valor" inputMode="decimal" placeholder="0,00" value={valor} onChange={(e) => setValor(e.target.value)} /></label>
+      <label>no fim do dia<input type="date" value={dia} onChange={(e) => setDia(e.target.value)} /></label>
+      <button disabled={gravando || !valor} onClick={gravar}>Gravar saldo</button>
+      {aviso && <span className="sub">{aviso}</span>}
+    </div>
   )
 }
 

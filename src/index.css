@@ -50,6 +50,11 @@ main { padding: 16px; }
 .grade .soma th, .grade .soma td { font-weight: 700; background: #f7f8fa; }
 .grade .saldo th, .grade .saldo td { font-weight: 800; background: #eef6f1; color: var(--verde); }
 .grade .saldo td.neg { color: var(--verm); background: #fee4e2; }
+.grade .banco th, .grade .banco td { font-weight: 600; color: #344054; background: #f2f4f7; }
+.grade .diferenca th, .grade .diferenca td { font-size: 12px; background: #fff; }
+.grade .diferenca td.ok { color: var(--verde); }
+.grade .diferenca td.dif { color: var(--verm); font-weight: 800; background: #fee4e2; }
+.saldo-banco { align-items: flex-end; }
 .arquivada th { color: var(--sub); }
 .tag { font-size: 10px; background: var(--linha); border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
 

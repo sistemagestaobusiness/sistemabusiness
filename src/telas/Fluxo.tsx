@@ -54,6 +54,11 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
   const saldoIni = useAoVivo(['lancamentos', 'contas', 'categorias'], () =>
     dados<number>(supabase.rpc('fn_saldo_ate', { p_data: ini })), [ini])
 
+  // saldo do banco no fim de cada dia, calculado no banco a partir do saldo informado e das linhas do extrato
+  const banco = useAoVivo(['extrato_linhas', 'contas'], () =>
+    dados<{ data: string; saldo: number }[]>(supabase.rpc('fn_saldo_banco', { p_ini: ini, p_fim: fim })), [ini, fim])
+  const saldoBanco = useMemo(() => new Map((banco.dados ?? []).map((b) => [b.data, Number(b.saldo)])), [banco.dados])
+
   const porCelula = useMemo(() => {
     const m = new Map<string, Lancamento[]>()
     for (const l of lancs.dados ?? []) {
@@ -84,7 +89,7 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
     return [...new Set(lista.map((c) => c.secao))].map((s) => ({ secao: s, cats: lista.filter((c) => c.secao === s) }))
   }
   const hojeIso = isoDia(hoje)
-  const erro = cats.erro || lancs.erro || saldoIni.erro
+  const erro = cats.erro || lancs.erro || saldoIni.erro || banco.erro
 
   const linha = (c: Categoria) => {
     const total = dias.reduce((a, d) => a + (porCelula.get(`${c.id}|${d}`) ?? []).reduce((x, l) => x + Number(l.valor), 0), 0)
@@ -163,6 +168,21 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
               <th className="fixa">Saldo</th>
               {saldos.map((s, i) => <td key={dias[i]} className={`${s < 0 ? 'neg' : ''} ${classeDia(dias[i])}`}>{moeda(s)}</td>)}
               <td className="total">{moeda(saldos[saldos.length - 1] ?? 0)}</td>
+            </tr>
+            <tr className="banco">
+              <th className="fixa" title="Saldo do extrato no fim do dia. Informe o saldo do app do banco na Conciliação.">Saldo no banco</th>
+              {dias.map((d) => { const b = saldoBanco.get(d); return <td key={d} className={classeDia(d)}>{b === undefined ? '' : moeda(b)}</td> })}
+              <td className="total">{(() => { const ult = [...dias].reverse().find((d) => saldoBanco.has(d)); return ult ? moeda(saldoBanco.get(ult)!) : '' })()}</td>
+            </tr>
+            <tr className="diferenca">
+              <th className="fixa" title="Saldo do sistema menos saldo do banco. Diferente de zero: falta, sobra ou valor errado em algum lançamento até esse dia.">Diferença</th>
+              {dias.map((d, i) => {
+                const b = saldoBanco.get(d)
+                if (b === undefined) return <td key={d} className={classeDia(d)} />
+                const dif = Math.round((saldos[i] - b) * 100) / 100
+                return <td key={d} className={`${classeDia(d)} ${dif !== 0 ? 'dif' : 'ok'}`}>{dif === 0 ? 'ok' : moeda(dif)}</td>
+              })}
+              <td className="total" />
             </tr>
           </tbody>
         </table>
