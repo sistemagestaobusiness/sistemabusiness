@@ -1,5 +1,5 @@
 -- Sistema Business · 0001 · estrutura base
--- Aplicada pela rotina do GitHub (.github/workflows/banco.yml) numa transação só (psql -1).
+-- Rodar no SQL Editor (a cópia em project-files já vem com begin/commit).
 -- Princípios: tudo fechado por padrão (RLS), nada é apagado de verdade (excluido_em),
 -- toda alteração fica na auditoria, e o banco avisa as telas em tempo real (publication supabase_realtime).
 

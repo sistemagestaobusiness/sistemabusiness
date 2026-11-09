@@ -1,6 +1,8 @@
-# Todo dia: um acesso ao banco e à API para o plano grátis do Supabase não pausar o projeto
+# Todo dia: um acesso ao Supabase para o plano grátis não pausar o projeto
 # (ele pausa depois de 7 dias sem uso, e o sistema às vezes fica 30 dias sem acesso).
-# Segredo: SUPABASE_DB_URL. Variáveis: SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY. Se falhar, o GitHub manda e-mail.
+# Usa só as variáveis públicas SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY (Settings > Secrets and variables > Actions > Variables).
+# A consulta chega ao banco e é recusada pelas regras de acesso (sem login não se vê nada): é o esperado.
+# Se o Supabase não responder, a rotina falha e o GitHub manda e-mail.
 name: Manter o Supabase ativo
 on:
   schedule:
@@ -10,9 +12,10 @@ jobs:
   ativo:
     runs-on: ubuntu-24.04
     steps:
-      - name: Acesso pela API
-        run: curl -fsS -o /dev/null -w "API respondeu %{http_code}\n" "${{ vars.SUPABASE_URL }}/auth/v1/health" -H "apikey: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}"
-      - name: Acesso ao banco
-        env:
-          DB: ${{ secrets.SUPABASE_DB_URL }}
-        run: psql "$DB" -tA -c "select 'lançamentos no banco: ' || count(*) from public.lancamentos"
+      - name: Acesso à API e ao banco
+        run: |
+          set -u
+          c=$(curl -sS -o /dev/null -w "%{http_code}" "${{ vars.SUPABASE_URL }}/rest/v1/categorias?select=id&limit=1" \
+                -H "apikey: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}")
+          echo "Supabase respondeu $c"
+          case "$c" in 2*|401|403) exit 0 ;; *) echo "::error::Supabase não respondeu como esperado ($c)"; exit 1 ;; esac
