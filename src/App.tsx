@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { configurado, supabase } from './lib/supabase'
 import { desligarTempoReal, ligarTempoReal, useEstadoTempoReal } from './lib/vivo'
 import { useVersaoNova } from './lib/versao'
-import { useSessao } from './auth/sessao'
+import { useInatividade, useSessao } from './auth/sessao'
 import { Login } from './auth/Login'
 import { Fluxo } from './telas/Fluxo'
 import { Lancamentos } from './telas/Lancamentos'
@@ -15,6 +15,7 @@ const telaDoEndereco = (): Tela => { const h = location.hash.slice(1); return h 
 export default function App() {
   const { sessao, etapa } = useSessao()
   const versaoNova = useVersaoNova()
+  const saindo = useInatividade(etapa === 'dentro')
   const [tela, setTela] = useState<Tela>(telaDoEndereco)
   useEffect(() => { const f = () => setTela(telaDoEndereco()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
 
@@ -32,6 +33,7 @@ export default function App() {
       {versaoNova && (
         <div className="faixa-versao">O sistema foi atualizado. <button onClick={() => location.reload()}>Atualizar agora</button></div>
       )}
+      {saindo && <div className="faixa-versao">Sem uso há 28 minutos: o sistema sai em 2 minutos. Mexa o mouse para continuar.</div>}
       <header className="topo">
         <strong>Business</strong>
         <nav>{(Object.keys(TELAS) as Tela[]).map((t) => <a key={t} href={`#${t}`} className={tela === t ? 'ativo' : ''}>{TELAS[t]}</a>)}</nav>

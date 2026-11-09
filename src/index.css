@@ -16,7 +16,6 @@ label input, label select { margin-top: 4px; color: var(--txt); }
 .login-card { background: var(--card); border: 1px solid var(--borda); border-radius: 14px; padding: 28px; width: 100%; max-width: 380px; }
 .login-card h1 { margin: 0 0 12px; font-size: 20px; }
 .login-card form > button:not(.link) { width: 100%; background: var(--txt); color: #fff; border: 0; padding: 10px; margin-top: 8px; }
-.qr { width: 200px; height: 200px; display: block; margin: 8px auto; }
 
 .topo { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: var(--txt); color: #fff; flex-wrap: wrap; }
 .topo nav a { color: #fff; opacity: .7; margin-right: 12px; }

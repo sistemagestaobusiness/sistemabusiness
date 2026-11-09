@@ -18,24 +18,18 @@ language sql stable security definer set search_path = public as $$
   select p.papel from public.perfis p where p.user_id = auth.uid() and p.ativo
 $$;
 
--- só vale com a verificação em duas etapas concluída (aal2)
-create or replace function public.mfa_ok() returns boolean
-language sql stable set search_path = public as $$
-  select coalesce(auth.jwt() ->> 'aal', 'aal1') = 'aal2'
-$$;
-
 create or replace function public.pode_ler() returns boolean
 language sql stable security definer set search_path = public as $$
-  select public.mfa_ok() and public.papel_atual() in ('SOCIO', 'CONTABILIDADE')
+  select public.papel_atual() in ('SOCIO', 'CONTABILIDADE')
 $$;
 
 create or replace function public.eh_socio() returns boolean
 language sql stable security definer set search_path = public as $$
-  select public.mfa_ok() and public.papel_atual() = 'SOCIO'
+  select public.papel_atual() = 'SOCIO'
 $$;
 
-revoke execute on function public.papel_atual(), public.mfa_ok(), public.pode_ler(), public.eh_socio() from public, anon;
-grant execute on function public.papel_atual(), public.mfa_ok(), public.pode_ler(), public.eh_socio() to authenticated;
+revoke execute on function public.papel_atual(), public.pode_ler(), public.eh_socio() from public, anon;
+grant execute on function public.papel_atual(), public.pode_ler(), public.eh_socio() to authenticated;
 
 -- ---------------------------------------------------------------- cadastros
 create table public.contas (
