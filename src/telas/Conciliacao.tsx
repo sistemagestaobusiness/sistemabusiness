@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAoVivo } from '../lib/vivo'
-import { dataBR, isoDia, moeda } from '../lib/formato'
+import { dataBR, isoDia, lerValor, moeda } from '../lib/formato'
 import { decodificar, lerOfx, normalizar } from '../lib/ofx'
 import { dados, todas, type Categoria, type Conta, type Lancamento, type LinhaExtrato } from '../lib/tipos'
 import { SelectCategoria } from './Lancamentos'
@@ -16,7 +16,7 @@ export function Conciliacao() {
   const conta = contaId || String(contas.dados?.[0]?.id ?? '')
   const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
   const linhas = useAoVivo(['extrato_linhas'], () => todas<LinhaExtrato>((a, b) =>
-    supabase.from('extrato_linhas').select('id,conta_id,fitid,data,valor,descricao,lancamento_id,ignorada').order('data', { ascending: false }).order('id').range(a, b)))
+    supabase.from('extrato_linhas').select('id,conta_id,fitid,data,valor,descricao,lancamento_id,ignorada,dividida').order('data', { ascending: false }).order('id').range(a, b)))
   const [aPartirDe, setAPartirDe] = useState('')
   // o que já foi conciliado (inclusive na planilha) não precisa voltar: por padrão importa a partir do dia
   // seguinte ao último lançamento conciliado
@@ -29,7 +29,7 @@ export function Conciliacao() {
   const inicioExtrato = daConta.reduce<string>((m, l) => (!m || l.data < m ? l.data : m), '')
   const desde = aPartirDe || inicioExtrato || inicioPadrao
 
-  const pend = (linhas.dados ?? []).filter((l) => !l.lancamento_id && !l.ignorada)
+  const pend = (linhas.dados ?? []).filter((l) => !l.lancamento_id && !l.ignorada && !l.dividida)
   const menor = pend.reduce((m, l) => (l.data < m ? l.data : m), isoDia(new Date()))
   const maior = pend.reduce((m, l) => (l.data > m ? l.data : m), menor)
   // candidatos: lançamentos ainda não conciliados perto das datas do extrato pendente
@@ -115,6 +115,7 @@ export function Conciliacao() {
           <tbody>
             {pend.map((l) => (
               <LinhaPendente key={l.id} linha={l} cands={sugestoes.get(l.id) ?? []} cats={cats.dados ?? []} tipo={tipo}
+                abertos={(lancs.dados ?? []).filter((x) => !ligados.has(x.id) && DIAS(x.data, l.data) <= 10 && (tipo.get(x.categoria_id)?.tipo === 'ENTRADA') === (l.valor > 0))}
                 sugestaoCat={l.descricao ? historico.get(normalizar(l.descricao)) : undefined} conciliar={conciliar} erro={setMsg} />
             ))}
             {linhas.dados && pend.length === 0 && <tr><td colSpan={4} className="sub">Nada pendente. Suba um extrato OFX para conciliar.</td></tr>}
@@ -126,11 +127,11 @@ export function Conciliacao() {
       {verFeitas && (
         <div className="tabela">
           <table><tbody>
-            {(linhas.dados ?? []).filter((l) => l.lancamento_id || l.ignorada).slice(0, 300).map((l) => (
+            {(linhas.dados ?? []).filter((l) => l.lancamento_id || l.ignorada || l.dividida).slice(0, 300).map((l) => (
               <tr key={l.id}>
                 <td>{dataBR(l.data)}</td><td className="sub">{l.descricao}</td>
                 <td className={`num ${l.valor < 0 ? 'neg' : ''}`}>{moeda(l.valor)}</td>
-                <td>{l.ignorada ? 'ignorada' : `conciliada · ${tipo.get((conciliadas.dados ?? []).find((c) => c.linha.id === l.id)?.categoria_id ?? 0)?.nome ?? ''}`}</td>
+                <td>{l.ignorada ? 'ignorada' : l.dividida ? 'dividida em vários lançamentos' : `conciliada · ${tipo.get((conciliadas.dados ?? []).find((c) => c.linha.id === l.id)?.categoria_id ?? 0)?.nome ?? ''}`}</td>
                 <td><button className="link" onClick={async () => {
                   const r = l.ignorada ? await supabase.from('extrato_linhas').update({ ignorada: false } as never).eq('id', l.id) : await supabase.rpc('fn_desconciliar', { p_linha: l.id })
                   if (r.error) setMsg(r.error.message)
@@ -144,13 +145,15 @@ export function Conciliacao() {
   )
 }
 
-function LinhaPendente({ linha, cands, cats, tipo, sugestaoCat, conciliar, erro }: {
-  linha: LinhaExtrato; cands: Lancamento[]; cats: Categoria[]; tipo: Map<number, Categoria>; sugestaoCat?: number
+function LinhaPendente({ linha, cands, cats, tipo, abertos, sugestaoCat, conciliar, erro }: {
+  linha: LinhaExtrato; cands: Lancamento[]; cats: Categoria[]; tipo: Map<number, Categoria>; abertos: Lancamento[]; sugestaoCat?: number
   conciliar: (linha: number, lanc: number) => Promise<void>; erro: (m: string) => void
 }) {
   const entrada = linha.valor > 0
   const [cat, setCat] = useState(sugestaoCat ? String(sugestaoCat) : '')
-  const opcoes = cats.filter((c) => (c.tipo === 'ENTRADA') === entrada)
+  const [dividindo, setDividindo] = useState(false)
+  // só linhas ativas: arquivada (cliente encerrado, linha antiga) não aparece para escolher
+  const opcoes = cats.filter((c) => (c.tipo === 'ENTRADA') === entrada && !c.arquivada)
   // Pix enviado para a Cora (Alexandre) ou o Nubank (Rodrigo) = pró-labore: um clique cria e concilia na linha certa.
   // O extrato do C6 não traz o nome de quem recebeu o Pix, por isso a escolha é de quem concilia.
   const prolabore = entrada ? [] : cats.filter((c) => c.tipo === 'SAIDA' && !c.arquivada && /pr[oó].?labore/i.test(c.nome))
@@ -181,14 +184,79 @@ function LinhaPendente({ linha, cands, cats, tipo, sugestaoCat, conciliar, erro 
         <div className="cand">
           <SelectCategoria cats={opcoes} value={cat} onChange={setCat} vazio={cands.length ? 'ou criar novo em…' : 'criar lançamento em…'} />
           <button className="link" onClick={() => criar()}>criar e conciliar</button>
+          <button className="link" onClick={() => setDividindo(!dividindo)} title="Um movimento do extrato vira vários lançamentos (ex.: fatura do cartão, crédito de vários clientes)">dividir</button>
           <button className="link" onClick={ignorar} title="Só para o que não é movimento da empresa (ex.: Pix recusado e estornado)">ignorar</button>
         </div>
-        {cands.length === 0 && prolabore.length > 0 && (
+        {dividindo && <Dividir linha={linha} opcoes={opcoes} abertos={abertos} tipo={tipo} erro={erro} fechar={() => setDividindo(false)} />}
+        {!dividindo && cands.length === 0 && prolabore.length > 0 && (
           <div className="cand prolabore">é pró-labore:
             {prolabore.map((c) => <button key={c.id} className="chip" style={c.cor ? { background: c.cor } : undefined} onClick={() => criar(String(c.id))}>{c.nome}</button>)}
           </div>
         )}
       </td>
     </tr>
+  )
+}
+
+let contadorParte = 0
+type Parte = { chave: number; categoria: string; valor: string; descricao: string; lancamento_id?: number }
+
+// Divide um movimento do extrato em vários lançamentos. Ex.: fatura do cartão Caixa (Business, Rodrigo, Alexandre)
+// ou um crédito que junta pagamentos de vários clientes (usa os previstos que já existem).
+// Só grava quando a soma das partes fecha com o extrato (o banco confere de novo).
+function Dividir({ linha, opcoes, abertos, tipo, erro, fechar }: {
+  linha: LinhaExtrato; opcoes: Categoria[]; abertos: Lancamento[]; tipo: Map<number, Categoria>; erro: (m: string) => void; fechar: () => void
+}) {
+  const total = Math.abs(linha.valor)
+  const nova = (p: Partial<Parte> = {}): Parte => ({ chave: ++contadorParte, categoria: '', valor: '', descricao: '', ...p })
+  const [partes, setPartes] = useState<Parte[]>(() => [nova(), nova()])
+  const [gravando, setGravando] = useState(false)
+  const soma = partes.reduce((a, p) => a + (lerValor(p.valor) ?? 0), 0)
+  const falta = Math.round((total - soma) * 100) / 100
+  const mudar = (i: number, m: Partial<Parte>) => setPartes((ps) => ps.map((p, j) => (j === i ? { ...p, ...m } : p)))
+  const usados = new Set(partes.map((p) => p.lancamento_id).filter(Boolean))
+  const usarPrevisto = (l: Lancamento) => setPartes((ps) => {
+    const vazia = ps.findIndex((p) => !p.categoria && !p.valor)
+    const p = nova({ categoria: String(l.categoria_id), valor: moeda(Number(l.valor)), descricao: l.descricao ?? '', lancamento_id: l.id })
+    return vazia >= 0 ? ps.map((x, j) => (j === vazia ? p : x)) : [...ps, p]
+  })
+  const gravar = async () => {
+    if (partes.some((p) => !p.categoria || !lerValor(p.valor))) { erro('Cada parte precisa da linha do fluxo e do valor.'); return }
+    if (falta !== 0) { erro(`As partes somam ${moeda(soma)} e o extrato é ${moeda(total)}.`); return }
+    setGravando(true)
+    const { error } = await supabase.rpc('fn_conciliar_dividido', {
+      p_linha: linha.id,
+      p_partes: partes.map((p) => ({ categoria_id: Number(p.categoria), valor: lerValor(p.valor), descricao: p.descricao || null, lancamento_id: p.lancamento_id ?? null })),
+    })
+    setGravando(false)
+    if (error) { erro(error.message); return }
+    fechar()
+  }
+  return (
+    <div className="dividir">
+      {abertos.length > 0 && (
+        <div className="cand">usar previsto:
+          {abertos.filter((l) => !usados.has(l.id)).slice(0, 12).map((l) => (
+            <button key={l.id} className="chip" onClick={() => usarPrevisto(l)} title={dataBR(l.data)}>{tipo.get(l.categoria_id)?.nome} {moeda(Number(l.valor))}</button>
+          ))}
+        </div>
+      )}
+      {partes.map((p, i) => (
+        <div key={p.chave} className="parte">
+          <SelectCategoria cats={p.lancamento_id ? [...opcoes, ...(tipo.get(Number(p.categoria)) ? [tipo.get(Number(p.categoria))!] : [])] : opcoes}
+            value={p.categoria} onChange={(v) => mudar(i, { categoria: v })} vazio="linha do fluxo…" />
+          <input className="valor" value={p.valor} onChange={(e) => mudar(i, { valor: e.target.value })} placeholder="valor" />
+          <input value={p.descricao} onChange={(e) => mudar(i, { descricao: e.target.value })} placeholder="descrição (opcional)" />
+          {p.lancamento_id && <span className="tag">previsto</span>}
+          {partes.length > 2 && <button className="link" onClick={() => setPartes((ps) => ps.filter((_, j) => j !== i))}>tirar</button>}
+        </div>
+      ))}
+      <div className="cand">
+        <button className="link" onClick={() => setPartes((ps) => [...ps, nova({ valor: falta > 0 ? moeda(falta) : '' })])} title="A parte nova já vem com o valor que falta">+ parte</button>
+        <span className={falta === 0 ? 's-conciliado status' : 'sub'}>{falta === 0 ? 'fecha com o extrato' : falta > 0 ? `falta ${moeda(falta)}` : `passou ${moeda(-falta)}`}</span>
+        <button className="primario" disabled={gravando || falta !== 0} onClick={gravar}>Conciliar dividido</button>
+        <button className="link" onClick={fechar}>cancelar</button>
+      </div>
+    </div>
   )
 }

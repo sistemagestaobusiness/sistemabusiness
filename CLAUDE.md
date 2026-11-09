@@ -26,7 +26,7 @@ React + TypeScript (Vite) nas telas, Supabase (org "Sistema Business", conta con
 ## Testar antes de entregar
 - `npm run build` e `npx oxlint`.
 - Duas janelas (obrigatório): `npx vite build -c vite.config.teste.ts && node testes/duas-janelas.mjs`. Usa um Supabase simulado (`testes/supabase-simulado.ts`) em que as duas janelas dividem os dados e se avisam como o Realtime.
-- Senha e Lançamentos: `node testes/senha.mjs` e `node testes/lancamentos.mjs` (depois do mesmo build de teste).
+- Senha, Lançamentos e Conciliação dividida: `node testes/senha.mjs`, `node testes/lancamentos.mjs` e `node testes/dividir.mjs` (depois do mesmo build de teste).
 - Banco: rodar as migrações num Postgres local com stub de `auth` e testar as regras de acesso.
 
 ## Importação da planilha

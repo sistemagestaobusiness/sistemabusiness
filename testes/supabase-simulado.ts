@@ -77,6 +77,21 @@ function rpc(nome: string, p: Record<string, unknown>) {
     gravar('extrato_linhas', ex.map((x) => x.id === p.p_linha ? { ...x, lancamento_id: p.p_lancamento } : x))
     avisar('lancamentos'); avisar('extrato_linhas')
   }
+  if (nome === 'fn_conciliar_dividido') {
+    const ex = ler('extrato_linhas'), e = ex.find((x) => x.id === p.p_linha)!
+    const partes = p.p_partes as { categoria_id: number; valor: number; descricao?: string; lancamento_id?: number }[]
+    const soma = Math.round(partes.reduce((a, x) => a + x.valor, 0) * 100) / 100
+    if (soma !== Math.abs(Number(e.valor))) return Promise.resolve({ data: null, error: { message: `As partes somam ${soma} e o extrato é ${Math.abs(Number(e.valor))}` } })
+    let ls = ler('lancamentos'); let id = ls.reduce((m, l) => Math.max(m, Number(l.id)), 0)
+    for (const x of partes) {
+      if (x.lancamento_id) ls = ls.map((l) => l.id === x.lancamento_id ? { ...l, data: e.data, valor: x.valor, categoria_id: x.categoria_id, status: 'CONCILIADO', extrato_linha_id: e.id, versao: Number(l.versao) + 1 } : l)
+      else ls.push({ id: ++id, data: e.data, valor: x.valor, categoria_id: x.categoria_id, descricao: x.descricao || e.descricao, status: 'CONCILIADO', extrato_linha_id: e.id, versao: 1, excluido_em: null })
+    }
+    gravar('lancamentos', ls)
+    gravar('extrato_linhas', ex.map((y) => y.id === p.p_linha ? { ...y, dividida: true } : y))
+    avisar('lancamentos'); avisar('extrato_linhas')
+    return Promise.resolve({ data: partes.length, error: null })
+  }
   return Promise.resolve({ data: 0, error: null })
 }
 
