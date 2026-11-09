@@ -105,7 +105,7 @@ def main():
     with open(saida, 'w', encoding='utf-8') as o:
         o.write('-- Importação da planilha Business (gerado por scripts/importar_planilha.py). CONTÉM NOMES DE CLIENTES.\n')
         o.write(f'-- {len(cats)} linhas do fluxo, {len(lancs)} lançamentos; realizado até {ate.isoformat()}.\nbegin;\n')
-        o.write("insert into public.contas (nome, saldo_inicial, data_inicial) values ('Conta Business', 0, '2018-09-01');\n")
+        o.write("insert into public.contas (nome, saldo_inicial, data_inicial) values ('C6', 0, '2018-09-01');\n")
         o.write('create temp table _mapa (linha int, id bigint) on commit drop;\n')
         for r, k in cats.items():
             o.write(f"with n as (insert into public.categorias (nome, tipo, secao, ordem, arquivada, cor) values "

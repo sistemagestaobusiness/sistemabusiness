@@ -19,3 +19,5 @@ export async function todas<T>(montar: (de: number, ate: number) => PromiseLike<
     if (parte.length < 1000) return saida
   }
 }
+export type Conta = { id: number; nome: string; ativa: boolean; ordem: number }
+export type LinhaExtrato = { id: number; conta_id: number; fitid: string; data: string; valor: number; descricao: string | null; lancamento_id: number | null; ignorada: boolean }

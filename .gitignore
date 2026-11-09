@@ -26,3 +26,4 @@ importacao*.sql
 *.xlsx
 dist-teste
 testes/*.png
+testes/*.json

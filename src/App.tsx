@@ -7,8 +7,9 @@ import { Login } from './auth/Login'
 import { Fluxo } from './telas/Fluxo'
 import { Lancamentos } from './telas/Lancamentos'
 import { Cadastros } from './telas/Cadastros'
+import { Conciliacao } from './telas/Conciliacao'
 
-const TELAS = { fluxo: 'Fluxo de caixa', lancamentos: 'Lançamentos', cadastros: 'Cadastros' } as const
+const TELAS = { fluxo: 'Fluxo de caixa', lancamentos: 'Lançamentos', conciliacao: 'Conciliação', cadastros: 'Cadastros' } as const
 type Tela = keyof typeof TELAS
 const telaDoEndereco = (): Tela => { const h = location.hash.slice(1); return h in TELAS ? (h as Tela) : 'fluxo' }
 
@@ -41,7 +42,7 @@ export default function App() {
         <span className="usuario">{sessao?.user.email}</span>
         <button className="link" onClick={() => supabase.auth.signOut()}>Sair</button>
       </header>
-      <main>{tela === 'fluxo' ? <Fluxo /> : tela === 'lancamentos' ? <Lancamentos /> : <Cadastros />}</main>
+      <main>{tela === 'fluxo' ? <Fluxo /> : tela === 'lancamentos' ? <Lancamentos /> : tela === 'conciliacao' ? <Conciliacao /> : <Cadastros />}</main>
     </div>
   )
 }

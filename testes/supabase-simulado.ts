@@ -26,6 +26,17 @@ class Consulta implements PromiseLike<{ data: unknown; error: null | { message: 
   ilike(c: string, v: string) { const s = v.replaceAll('%', '').toLowerCase(); this.filtros.push((l) => String(l[c] ?? '').toLowerCase().includes(s)); return this }
   order(c: string, o?: { ascending?: boolean }) { this.ordem.push([c, o?.ascending !== false]); return this }
   range(a: number, b: number) { this.faixa = [a, b]; return this }
+  limit(n: number) { this.faixa = [0, n - 1]; return this }
+  neq(c: string, v: unknown) { this.filtros.push((l) => l[c] !== v); return this }
+  in(c: string, vs: unknown[]) { this.filtros.push((l) => vs.includes(l[c])); return this }
+  upsert(vs: Record<string, unknown>[]) {
+    const ls = ler(this.tabela); let id = proximoId(this.tabela)
+    const chave = (l: Record<string, unknown>) => `${l.conta_id}|${l.fitid}`
+    const ja = new Set(ls.map(chave))
+    const novos = vs.filter((v) => !ja.has(chave(v))).map((v) => ({ id: id++, lancamento_id: null, ignorada: false, ...v }) as Linha)
+    gravar(this.tabela, [...ls, ...novos]); avisar(this.tabela)
+    return Promise.resolve({ data: null, error: null })
+  }
   single() { this.umSo = true; return this }
   insert(v: Record<string, unknown>) { this.op = 'insert'; this.valores = v; return this }
   update(v: Record<string, unknown>) { this.op = 'update'; this.valores = v; return this }
@@ -58,6 +69,13 @@ function rpc(nome: string, p: Record<string, unknown>) {
     const s = ler('lancamentos').filter((l) => !l.excluido_em && String(l.data) < String(p.p_data))
       .reduce((a, l) => a + (tipo.get(l.categoria_id as number) === 'SAIDA' ? -1 : 1) * Number(l.valor), 0)
     return Promise.resolve({ data: 1000 + s, error: null })
+  }
+  if (nome === 'fn_conciliar') {
+    const ex = ler('extrato_linhas'), e = ex.find((x) => x.id === p.p_linha)!
+    gravar('lancamentos', ler('lancamentos').map((l) => l.id === p.p_lancamento
+      ? { ...l, data: e.data, valor: Math.abs(Number(e.valor)), status: 'CONCILIADO', versao: Number(l.versao) + 1 } : l))
+    gravar('extrato_linhas', ex.map((x) => x.id === p.p_linha ? { ...x, lancamento_id: p.p_lancamento } : x))
+    avisar('lancamentos'); avisar('extrato_linhas')
   }
   return Promise.resolve({ data: 0, error: null })
 }

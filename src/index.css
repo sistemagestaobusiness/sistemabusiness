@@ -95,3 +95,6 @@ main { padding: 16px; }
 .dois { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: 16px; align-items: start; }
 .dois .bloco { margin-top: 0; }
 @media (max-width: 760px) { .dois { grid-template-columns: 1fr; } }
+.cand { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12.5px; padding: 2px 0; }
+.cand select { width: auto; max-width: 240px; padding: 4px 6px; }
+button.primario { background: var(--verde); color: #fff; border: 0; height: 36px; }
