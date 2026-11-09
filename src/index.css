@@ -102,3 +102,8 @@ button.primario { background: var(--verde); color: #fff; border: 0; height: 36px
 .alternar button { border: 0; border-radius: 0; background: transparent; padding: 6px 14px; }
 .alternar button.ativo { background: var(--txt); color: var(--card); }
 .grade table.meses td, .grade table.meses thead th:not(.fixa) { min-width: 84px; }
+.titulo { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.titulo button.primario { padding: 0 16px; }
+tr.clicavel { cursor: pointer; }
+tr.clicavel:hover td { background: var(--linha); }
+.acoes button.link.perigo { color: var(--verm); margin-right: auto; }

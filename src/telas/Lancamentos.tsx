@@ -12,6 +12,7 @@ export function Lancamentos() {
   const [status, setStatus] = useState('')
   const [texto, setTexto] = useState('')
   const [sel, setSel] = useState<Set<number>>(new Set())
+  const [aberto, setAberto] = useState<Lancamento | 'novo' | null>(null)
 
   const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
   const lancs = useAoVivo(['lancamentos'], () => todas<Lancamento>((a, b) => {
@@ -32,7 +33,7 @@ export function Lancamentos() {
 
   return (
     <section className="pagina">
-      <h2>Lançamentos</h2>
+      <div className="titulo"><h2>Lançamentos</h2><button className="primario" onClick={() => setAberto('novo')}>+ Novo lançamento</button></div>
       <div className="filtros">
         <label>De<input type="date" value={de} onChange={(e) => setDe(e.target.value)} /></label>
         <label>Até<input type="date" value={ate} onChange={(e) => setAte(e.target.value)} /></label>
@@ -55,8 +56,8 @@ export function Lancamentos() {
             {lista.map((l) => {
               const c = nomeCat.get(l.categoria_id)
               return (
-                <tr key={l.id} className={sel.has(l.id) ? 'sel' : ''} onClick={() => alternar(l.id)}>
-                  <td><input type="checkbox" checked={sel.has(l.id)} readOnly /></td>
+                <tr key={l.id} className={`clicavel ${sel.has(l.id) ? 'sel' : ''}`} onClick={() => setAberto(l)} title="Clique para editar">
+                  <td onClick={(e) => { e.stopPropagation(); alternar(l.id) }}><input type="checkbox" checked={sel.has(l.id)} readOnly /></td>
                   <td>{dataBR(l.data)}</td>
                   <td>{c?.nome}{l.recorrencia_id && <span className="tag">projeção</span>}</td>
                   <td className="sub">{l.descricao}</td>
@@ -72,7 +73,70 @@ export function Lancamentos() {
       </div>
 
       <Projecoes cats={cats.dados ?? []} />
+      {aberto && <JanelaLancamento key={aberto === 'novo' ? 'novo' : aberto.id} original={aberto === 'novo' ? null : aberto}
+        cats={cats.dados ?? []} fechar={() => setAberto(null)} />}
     </section>
+  )
+}
+
+// Lançamento novo ou edição de um da lista: data, linha, valor, descrição e situação.
+// Grava com a versão de quando abriu: se alguém mudou no meio, avisa em vez de sobrescrever.
+function JanelaLancamento({ original, cats, fechar }: { original: Lancamento | null; cats: Categoria[]; fechar: () => void }) {
+  const hojeIso = isoDia(new Date())
+  const [data, setData] = useState(original?.data ?? hojeIso)
+  const [categoria, setCategoria] = useState(original ? String(original.categoria_id) : '')
+  const [valor, setValor] = useState(original ? moeda(Number(original.valor)) : '')
+  const [descricao, setDescricao] = useState(original?.descricao ?? '')
+  const [status, setStatus] = useState<Status>(original?.status ?? 'REALIZADO')
+  const [mexeuStatus, setMexeuStatus] = useState(Boolean(original))
+  const [msg, setMsg] = useState('')
+  const mudarData = (d: string) => { setData(d); if (!mexeuStatus) setStatus(d <= hojeIso ? 'REALIZADO' : 'PREVISTO') }
+
+  const salvar = async (e: FormEvent) => {
+    e.preventDefault(); setMsg('')
+    const v = lerValor(valor)
+    if (!data || !categoria) { setMsg('Preencha a data e a linha do fluxo.'); return }
+    if (!v) { setMsg('Valor inválido.'); return }
+    const campos = { data, categoria_id: Number(categoria), valor: v, descricao: descricao || null, status }
+    if (original) {
+      const { data: r, error } = await supabase.from('lancamentos').update(campos).eq('id', original.id).eq('versao', original.versao).select('id')
+      if (error) { setMsg(error.message); return }
+      if (!r?.length) { setMsg('Esse lançamento foi alterado por outra pessoa enquanto você editava. Feche, confira o valor atual na lista e edite de novo.'); return }
+    } else {
+      const { error } = await supabase.from('lancamentos').insert(campos)
+      if (error) { setMsg(error.message); return }
+    }
+    fechar()
+  }
+  const excluir = async () => {
+    if (!original || !confirm('Mandar este lançamento para a lixeira?')) return
+    const { data: r, error } = await supabase.from('lancamentos').update({ excluido_em: new Date().toISOString() })
+      .eq('id', original.id).eq('versao', original.versao).select('id')
+    if (error) { setMsg(error.message); return }
+    if (!r?.length) { setMsg('Esse lançamento foi alterado por outra pessoa. Feche e confira antes de excluir.'); return }
+    fechar()
+  }
+
+  return (
+    <div className="fundo" onClick={fechar}>
+      <div className="janela" onClick={(e) => e.stopPropagation()}>
+        <header><strong>{original ? 'Editar lançamento' : 'Novo lançamento'}</strong><button className="link" onClick={fechar}>Fechar</button></header>
+        {original?.status === 'CONCILIADO' && <p className="sub">Este lançamento já foi conciliado com o extrato. Para mudar valor ou data, desfaça a conciliação na tela Conciliação.</p>}
+        <form onSubmit={salvar}>
+          <label>Data<input type="date" value={data} onChange={(e) => mudarData(e.target.value)} required /></label>
+          <label>Linha do fluxo<SelectCategoria cats={cats.filter((c) => !c.arquivada || String(c.id) === categoria)} value={categoria} onChange={setCategoria} vazio="Escolha…" /></label>
+          <label>Valor<input value={valor} onChange={(e) => setValor(e.target.value)} placeholder="1.234,56 ou =1000+500" autoFocus={!original} required /></label>
+          <label>Descrição<input value={descricao} onChange={(e) => setDescricao(e.target.value)} /></label>
+          <label>Situação
+            <select value={status} onChange={(e) => { setStatus(e.target.value as Status); setMexeuStatus(true) }}>
+              <option value="PREVISTO">Previsto</option><option value="REALIZADO">Realizado</option><option value="CONCILIADO">Conciliado</option>
+            </select>
+          </label>
+          {msg && <p className="aviso">{msg}</p>}
+          <div className="acoes">{original && <button type="button" className="link perigo" onClick={excluir}>Excluir</button>}<button>Salvar</button></div>
+        </form>
+      </div>
+    </div>
   )
 }
 
