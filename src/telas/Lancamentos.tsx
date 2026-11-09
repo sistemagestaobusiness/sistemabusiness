@@ -194,34 +194,58 @@ function AjusteMassa({ ids, cats, total, limpar }: { ids: number[]; cats: Catego
   )
 }
 
+// data da n-ésima parcela: começa no mês do início (ou no seguinte, se o dia já passou); dia 31 vira o último dia do mês
+function dataDaParcela(inicio: string, dia: number, n: number): string {
+  const [a, m, d] = inicio.split('-').map(Number)
+  let mes = (a * 12 + m - 1) + (Math.min(dia, new Date(a, m, 0).getDate()) < d ? 1 : 0) + n - 1
+  const ano = Math.floor(mes / 12); mes = mes % 12
+  const ultimo = new Date(ano, mes + 1, 0).getDate()
+  return `${ano}-${String(mes + 1).padStart(2, '0')}-${String(Math.min(dia, ultimo)).padStart(2, '0')}`
+}
+
 function Projecoes({ cats }: { cats: Categoria[] }) {
   const recs = useAoVivo(['recorrencias'], () => dados<Recorrencia[]>(supabase.from('recorrencias').select('*').order('id', { ascending: false })))
-  const [f, setF] = useState({ categoria: '', valor: '', dia: '10', inicio: isoDia(new Date()), fim: '', descricao: '' })
+  const [f, setF] = useState({ categoria: '', valor: '', dia: '10', inicio: isoDia(new Date()), fim: '', parcelas: '', descricao: '' })
   const [msg, setMsg] = useState('')
   const nomeCat = new Map(cats.map((c) => [c.id, c.nome]))
   const criar = async (e: FormEvent) => {
     e.preventDefault(); setMsg('')
     const valor = lerValor(f.valor)
     if (!f.categoria || !valor) { setMsg('Preencha a linha e o valor.'); return }
+    const parcelas = f.parcelas ? Number(f.parcelas) : 0
+    if (f.parcelas && (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 120)) { setMsg('Parcelas: de 1 a 120.'); return }
+    const fim = parcelas ? dataDaParcela(f.inicio, Number(f.dia), parcelas) : f.fim || null
     const { data, error } = await supabase.from('recorrencias').insert({
-      categoria_id: Number(f.categoria), valor, dia: Number(f.dia), inicio: f.inicio, fim: f.fim || null, descricao: f.descricao || null,
+      categoria_id: Number(f.categoria), valor, dia: Number(f.dia), inicio: f.inicio, fim, descricao: f.descricao || null,
     }).select('id').single()
     if (error) { setMsg(error.message); return }
     const g = await supabase.rpc('fn_gerar_recorrencia', { p_id: data.id })
     if (g.error) { setMsg(g.error.message); return }
-    setMsg(`Projeção criada: ${g.data} lançamentos previstos.`)
-    setF({ ...f, valor: '', descricao: '' })
+    if (parcelas) {
+      // numera as parcelas na descrição (1/18, 2/18…), na ordem das datas
+      const ls = await dados<{ id: number; versao: number }[]>(supabase.from('lancamentos').select('id,versao')
+        .eq('recorrencia_id', data.id).is('excluido_em', null).order('data'))
+      for (const [i, l] of ls.entries()) {
+        const r = await supabase.from('lancamentos').update({ descricao: `${f.descricao ? f.descricao + ' · ' : ''}parcela ${i + 1}/${parcelas}` })
+          .eq('id', l.id).eq('versao', l.versao)
+        if (r.error) { setMsg(r.error.message); return }
+      }
+    }
+    setMsg(parcelas ? `Projeção criada: ${g.data} parcelas previstas, a última em ${dataBR(fim!)}.` : `Projeção criada: ${g.data} lançamentos previstos.`)
+    setF({ ...f, valor: '', descricao: '', parcelas: '' })
   }
   return (
     <div className="bloco">
       <h3>Projeções recorrentes</h3>
-      <p className="sub">Cria um lançamento previsto por mês. Sem data final, projeta 24 meses. Para mudar depois, filtre a linha acima, selecione e use o ajuste em massa.</p>
+      <p className="sub">Cria um lançamento previsto por mês. Com parcelas (ex.: 18), cria exatamente essa quantidade e numera 1/18, 2/18…; sem parcelas nem data final, projeta 24 meses. Para mudar depois, filtre a linha acima, selecione e use o ajuste em massa.</p>
       <form className="filtros" onSubmit={criar}>
         <label>Linha do fluxo<SelectCategoria cats={cats.filter((c) => !c.arquivada)} value={f.categoria} onChange={(v) => setF({ ...f, categoria: v })} vazio="Escolha…" /></label>
         <label>Valor<input value={f.valor} onChange={(e) => setF({ ...f, valor: e.target.value })} placeholder="1.234,56" /></label>
         <label>Dia do mês<input type="number" min={1} max={31} value={f.dia} onChange={(e) => setF({ ...f, dia: e.target.value })} /></label>
         <label>A partir de<input type="date" value={f.inicio} onChange={(e) => setF({ ...f, inicio: e.target.value })} /></label>
-        <label>Até (opcional)<input type="date" value={f.fim} onChange={(e) => setF({ ...f, fim: e.target.value })} /></label>
+        <label>Parcelas (opcional)<input type="number" min={1} max={120} value={f.parcelas} placeholder="ex.: 18" onChange={(e) => setF({ ...f, parcelas: e.target.value })} /></label>
+        <label>Até (opcional)<input type="date" value={f.parcelas ? '' : f.fim} disabled={Boolean(f.parcelas)} title={f.parcelas ? 'Com parcelas, a data final é calculada' : undefined}
+          onChange={(e) => setF({ ...f, fim: e.target.value })} /></label>
         <label>Descrição<input value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} /></label>
         <button>Criar projeção</button>
       </form>
