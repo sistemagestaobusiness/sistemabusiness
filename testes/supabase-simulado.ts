@@ -2,7 +2,19 @@
 // janelas do mesmo navegador compartilham, e cada gravação avisa a outra janela pelo BroadcastChannel,
 // fazendo o papel do Realtime do Supabase. Usado só por vite.config.teste.ts.
 type Linha = Record<string, unknown> & { id: number }
-const ler = (t: string): Linha[] => JSON.parse(localStorage.getItem('sim_' + t) || '[]')
+// espaços: sem nada gravado, existe só a Business (1); linha sem espaco_id é da Business (testes antigos)
+const COM_ESPACO = new Set(['contas', 'clientes', 'fornecedores', 'categorias', 'recorrencias', 'lancamentos', 'extrato_linhas'])
+const ler = (t: string): Linha[] => {
+  const ls: Linha[] = JSON.parse(localStorage.getItem('sim_' + t) || '[]')
+  if (t === 'espacos' && !ls.length) return [{ id: 1, nome: 'Business' }]
+  return COM_ESPACO.has(t) ? ls.map((l) => ({ ...l, espaco_id: l.espaco_id ?? 1 })) : ls
+}
+// como o gatilho do banco: lançamento, projeção e extrato herdam o espaço da linha do fluxo / da conta
+const herdarEspaco = (t: string, v: Record<string, unknown>) => {
+  if (t === 'lancamentos' || t === 'recorrencias') return { ...v, espaco_id: ler('categorias').find((c) => c.id === v.categoria_id)?.espaco_id ?? 1 }
+  if (t === 'extrato_linhas') return { ...v, espaco_id: ler('contas').find((c) => c.id === v.conta_id)?.espaco_id ?? 1 }
+  return v
+}
 const gravar = (t: string, ls: Linha[]) => localStorage.setItem('sim_' + t, JSON.stringify(ls))
 const bc = new BroadcastChannel('sim-realtime')
 const ouvintes: { tabela: string; cb: () => void }[] = []
@@ -33,7 +45,7 @@ class Consulta implements PromiseLike<{ data: unknown; error: null | { message: 
     const ls = ler(this.tabela); let id = proximoId(this.tabela)
     const chave = (l: Record<string, unknown>) => `${l.conta_id}|${l.fitid}`
     const ja = new Set(ls.map(chave))
-    const novos = vs.filter((v) => !ja.has(chave(v))).map((v) => ({ id: id++, lancamento_id: null, ignorada: false, ...v }) as Linha)
+    const novos = vs.filter((v) => !ja.has(chave(v))).map((v) => herdarEspaco(this.tabela, { id: id++, lancamento_id: null, ignorada: false, ...v }) as Linha)
     gravar(this.tabela, [...ls, ...novos]); avisar(this.tabela)
     return Promise.resolve({ data: null, error: null })
   }
@@ -43,7 +55,7 @@ class Consulta implements PromiseLike<{ data: unknown; error: null | { message: 
   executar() {
     let ls = ler(this.tabela)
     if (this.op === 'insert') {
-      const n = { id: proximoId(this.tabela), versao: 1, excluido_em: null, recorrencia_id: null, arquivada: false, ...this.valores } as Linha
+      const n = herdarEspaco(this.tabela, { id: proximoId(this.tabela), versao: 1, excluido_em: null, recorrencia_id: null, arquivada: false, ...this.valores }) as Linha
       gravar(this.tabela, [...ls, n]); avisar(this.tabela)
       return { data: this.umSo ? n : [n], error: null }
     }
@@ -66,9 +78,11 @@ class Consulta implements PromiseLike<{ data: unknown; error: null | { message: 
 function rpc(nome: string, p: Record<string, unknown>) {
   if (nome === 'fn_saldo_ate') {
     const tipo = new Map(ler('categorias').map((c) => [c.id, c.tipo]))
-    const s = ler('lancamentos').filter((l) => !l.excluido_em && String(l.data) < String(p.p_data))
+    const esp = Number(p.p_espaco ?? 1)
+    const inicial = esp === 1 ? 1000 : ler('contas').filter((c) => c.espaco_id === esp).reduce((a, c) => a + Number(c.saldo_inicial ?? 0), 0)
+    const s = ler('lancamentos').filter((l) => l.espaco_id === esp && !l.excluido_em && String(l.data) < String(p.p_data))
       .reduce((a, l) => a + (tipo.get(l.categoria_id as number) === 'SAIDA' ? -1 : 1) * Number(l.valor), 0)
-    return Promise.resolve({ data: 1000 + s, error: null })
+    return Promise.resolve({ data: inicial + s, error: null })
   }
   if (nome === 'fn_conciliar') {
     const ex = ler('extrato_linhas'), e = ex.find((x) => x.id === p.p_linha)!
@@ -98,7 +112,7 @@ function rpc(nome: string, p: Record<string, unknown>) {
     const ex = ler('extrato_linhas')
     for (let d = String(p.p_ini); d <= String(p.p_fim); d = new Date(Date.parse(d + 'T12:00:00Z') + 86_400_000).toISOString().slice(0, 10)) {
       let soma: number | null = null
-      for (const c of ler('contas').filter((c) => c.saldo_banco != null && c.saldo_banco_em)) {
+      for (const c of ler('contas').filter((c) => c.espaco_id === Number(p.p_espaco ?? 1) && c.saldo_banco != null && c.saldo_banco_em)) {
         const ls = ex.filter((e) => e.conta_id === c.id)
         if (!ls.length) continue
         const datas = ls.map((e) => String(e.data)).sort()

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { configurado, supabase } from './lib/supabase'
-import { desligarTempoReal, ligarTempoReal, useEstadoTempoReal } from './lib/vivo'
+import { desligarTempoReal, ligarTempoReal, useAoVivo, useEstadoTempoReal } from './lib/vivo'
+import { setEspaco, useEspaco } from './lib/espaco'
+import { dados } from './lib/tipos'
 import { useVersaoNova } from './lib/versao'
 import { useInatividade, useSessao } from './auth/sessao'
 import { FormSenha, Login } from './auth/Login'
@@ -17,8 +19,6 @@ export default function App() {
   const { sessao, etapa } = useSessao()
   const versaoNova = useVersaoNova()
   const saindo = useInatividade(etapa === 'dentro')
-  const [trocandoSenha, setTrocandoSenha] = useState(false)
-  const [senhaTrocada, setSenhaTrocada] = useState(false)
   const [tela, setTela] = useState<Tela>(telaDoEndereco)
   useEffect(() => { const f = () => setTela(telaDoEndereco()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
 
@@ -31,6 +31,23 @@ export default function App() {
   if (etapa === 'carregando') return <div className="login"><p>Carregando…</p></div>
   if (etapa !== 'dentro') return <Login etapa={etapa} />
 
+  return <Dentro email={sessao?.user.email} versaoNova={versaoNova} saindo={saindo} tela={tela} />
+}
+
+type Espaco = { id: number; nome: string }
+
+function Dentro({ email, versaoNova, saindo, tela }: { email?: string; versaoNova: boolean; saindo: boolean; tela: Tela }) {
+  const [trocandoSenha, setTrocandoSenha] = useState(false)
+  const [senhaTrocada, setSenhaTrocada] = useState(false)
+  // espaços que a pessoa pode ver (o banco só devolve os dela). Business sempre é o 1.
+  const espacos = useAoVivo(['espacos'], () => dados<Espaco[]>(supabase.from('espacos').select('id,nome').order('id')))
+  const esp = useEspaco()
+  const lista = espacos.dados ?? []
+  const valido = lista.some((e) => e.id === esp)
+  const primeiro = lista[0]?.id
+  useEffect(() => { if (primeiro !== undefined && !valido) setEspaco(primeiro) }, [primeiro, valido])
+  const nome = lista.find((e) => e.id === esp)?.nome ?? 'Business'
+
   return (
     <div className="app">
       {versaoNova && (
@@ -38,10 +55,13 @@ export default function App() {
       )}
       {saindo && <div className="faixa-versao">Sem uso há 28 minutos: o sistema sai em 2 minutos. Mexa o mouse para continuar.</div>}
       <header className="topo">
-        <strong>Business</strong>
+        {lista.length > 1
+          ? <select className="espaco" value={esp} onChange={(e) => setEspaco(Number(e.target.value))} title="Controle aberto">
+              {lista.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}</select>
+          : <strong>{nome}</strong>}
         <nav>{(Object.keys(TELAS) as Tela[]).map((t) => <a key={t} href={`#${t}`} className={tela === t ? 'ativo' : ''}>{TELAS[t]}</a>)}</nav>
         <IndicadorAoVivo />
-        <span className="usuario">{sessao?.user.email}</span>
+        <span className="usuario">{email}</span>
         <button className="link" onClick={() => { setTrocandoSenha(true); setSenhaTrocada(false) }}>Trocar senha</button>
         <button className="link" onClick={() => supabase.auth.signOut()}>Sair</button>
       </header>
@@ -50,11 +70,12 @@ export default function App() {
           <div className="janela login-card" onClick={(e) => e.stopPropagation()}>
             <header><strong>Trocar senha</strong><button className="link" onClick={() => setTrocandoSenha(false)}>Fechar</button></header>
             {senhaTrocada ? <p>Senha trocada. Use a nova no próximo acesso.</p>
-              : <FormSenha emailAtual={sessao?.user.email} aoTerminar={() => setSenhaTrocada(true)} />}
+              : <FormSenha emailAtual={email} aoTerminar={() => setSenhaTrocada(true)} />}
           </div>
         </div>
       )}
-      <main>{tela === 'fluxo' ? <Fluxo /> : tela === 'lancamentos' ? <Lancamentos /> : tela === 'conciliacao' ? <Conciliacao /> : <Cadastros />}</main>
+      {espacos.erro && <p className="aviso">Não consegui carregar: {espacos.erro}</p>}
+      {valido && <main key={esp}>{tela === 'fluxo' ? <Fluxo /> : tela === 'lancamentos' ? <Lancamentos /> : tela === 'conciliacao' ? <Conciliacao /> : <Cadastros />}</main>}
     </div>
   )
 }

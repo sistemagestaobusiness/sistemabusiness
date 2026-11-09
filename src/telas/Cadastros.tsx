@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAoVivo } from '../lib/vivo'
+import { espacoId } from '../lib/espaco'
 import { dados, type Categoria, type Cliente } from '../lib/tipos'
 
 export function Cadastros() {
@@ -20,7 +21,7 @@ const VAZIO: Omit<Cliente, 'id'> = { nome: '', documento: '', contato: '', email
 const COBRANCA = { BOLETO: 'Boleto', TRANSFERENCIA: 'Transferência', PIX: 'Pix' }
 
 function Clientes() {
-  const clientes = useAoVivo(['clientes'], () => dados<Cliente[]>(supabase.from('clientes').select('*').order('nome')))
+  const clientes = useAoVivo(['clientes'], () => dados<Cliente[]>(supabase.from('clientes').select('*').eq('espaco_id', espacoId()).order('nome')))
   const [f, setF] = useState<Omit<Cliente, 'id'> & { id?: number }>(VAZIO)
   const [busca, setBusca] = useState('')
   const [situacao, setSituacao] = useState<'ATIVO' | 'ENCERRADO' | 'TODOS'>('ATIVO')
@@ -30,20 +31,20 @@ function Clientes() {
     const { id, ...campos } = f
     const limpo = Object.fromEntries(Object.entries(campos).map(([k, v]) => [k, v === '' ? null : v])) as never
     const r = id ? await supabase.from('clientes').update(limpo).eq('id', id).select('id').single()
-      : await supabase.from('clientes').insert(limpo).select('id').single()
+      : await supabase.from('clientes').insert({ ...(limpo as object), espaco_id: espacoId() } as never).select('id').single()
     if (r.error) { setMsg(r.error.message); return }
     const cid = (r.data as { id: number }).id
     // todo cliente tem a sua linha no fluxo (seção Clientes): é nela que entram os recebimentos e as projeções.
     // Encerrado: a linha sai do fluxo (fica arquivada, os lançamentos continuam no saldo); reativado: volta.
-    const linhas = await dados<Categoria[]>(supabase.from('categorias').select('*').eq('cliente_id', cid))
+    const linhas = await dados<Categoria[]>(supabase.from('categorias').select('*').eq('espaco_id', espacoId()).eq('cliente_id', cid))
     const arquivada = f.situacao === 'ENCERRADO'
     if (linhas.length) {
       const a = await supabase.from('categorias').update({ arquivada } as never).eq('cliente_id', cid)
       if (a.error) { setMsg(a.error.message); return }
     } else {
-      const ult = await dados<{ ordem: number }[]>(supabase.from('categorias').select('ordem').eq('secao', 'Clientes').order('ordem', { ascending: false }).limit(1))
+      const ult = await dados<{ ordem: number }[]>(supabase.from('categorias').select('ordem').eq('espaco_id', espacoId()).eq('secao', 'Clientes').order('ordem', { ascending: false }).limit(1))
       const n = await supabase.from('categorias').insert({
-        nome: f.nome.trim(), tipo: 'ENTRADA', secao: 'Clientes', ordem: (ult[0]?.ordem ?? 0) + 1, arquivada, cliente_id: cid,
+        nome: f.nome.trim(), tipo: 'ENTRADA', secao: 'Clientes', ordem: (ult[0]?.ordem ?? 0) + 1, arquivada, cliente_id: cid, espaco_id: espacoId(),
       } as never)
       if (n.error) { setMsg(n.error.message); return }
     }
@@ -90,7 +91,7 @@ function Clientes() {
 }
 
 function Linhas() {
-  const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
+  const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').eq('espaco_id', espacoId()).order('ordem')))
   const [verArquivadas, setVerArquivadas] = useState(false)
   const [nova, setNova] = useState({ nome: '', tipo: 'ENTRADA', secao: 'Clientes' })
   const [msg, setMsg] = useState('')
@@ -108,7 +109,7 @@ function Linhas() {
   const criar = async (e: FormEvent) => {
     e.preventDefault(); setMsg('')
     const ordem = Math.max(0, ...lista.filter((x) => x.secao === nova.secao).map((x) => x.ordem)) + 1
-    const { error } = await supabase.from('categorias').insert({ ...nova, ordem })
+    const { error } = await supabase.from('categorias').insert({ ...nova, ordem, espaco_id: espacoId() } as never)
     if (error) { setMsg(error.message); return }
     setNova({ ...nova, nome: '' })
   }

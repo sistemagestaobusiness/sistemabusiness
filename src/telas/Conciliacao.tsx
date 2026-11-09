@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAoVivo } from '../lib/vivo'
+import { espacoId } from '../lib/espaco'
 import { dataBR, isoDia, lerValor, moeda } from '../lib/formato'
 import { decodificar, lerOfx, normalizar } from '../lib/ofx'
 import { dados, todas, type Categoria, type Conta, type Lancamento, type LinhaExtrato } from '../lib/tipos'
@@ -12,15 +13,15 @@ export function Conciliacao() {
   const [contaId, setContaId] = useState('')
   const [msg, setMsg] = useState('')
   const [verFeitas, setVerFeitas] = useState(false)
-  const contas = useAoVivo(['contas'], () => dados<Conta[]>(supabase.from('contas').select('id,nome,ativa,ordem,saldo_banco,saldo_banco_em').order('ordem').order('id')))
+  const contas = useAoVivo(['contas'], () => dados<Conta[]>(supabase.from('contas').select('id,nome,ativa,ordem,saldo_banco,saldo_banco_em').eq('espaco_id', espacoId()).order('ordem').order('id')))
   const conta = contaId || String(contas.dados?.[0]?.id ?? '')
-  const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
+  const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').eq('espaco_id', espacoId()).order('ordem')))
   const linhas = useAoVivo(['extrato_linhas'], () => todas<LinhaExtrato>((a, b) =>
-    supabase.from('extrato_linhas').select('id,conta_id,fitid,data,valor,descricao,lancamento_id,ignorada,dividida').order('data', { ascending: false }).order('id').range(a, b)))
+    supabase.from('extrato_linhas').select('id,conta_id,fitid,data,valor,descricao,lancamento_id,ignorada,dividida').eq('espaco_id', espacoId()).order('data', { ascending: false }).order('id').range(a, b)))
   const [aPartirDe, setAPartirDe] = useState('')
   // o que já foi conciliado (inclusive na planilha) não precisa voltar: por padrão importa a partir do dia
   // seguinte ao último lançamento conciliado
-  const ultimoConciliado = useAoVivo(['lancamentos'], () => dados<{ data: string }[]>(supabase.from('lancamentos').select('data')
+  const ultimoConciliado = useAoVivo(['lancamentos'], () => dados<{ data: string }[]>(supabase.from('lancamentos').select('data').eq('espaco_id', espacoId())
     .eq('status', 'CONCILIADO').is('excluido_em', null).lte('data', isoDia(new Date())).order('data', { ascending: false }).limit(1)))
   const inicioPadrao = ultimoConciliado.dados?.[0] ? isoDia(new Date(Date.parse(ultimoConciliado.dados[0].data + 'T12:00:00') + 86_400_000)) : ''
   // primeiro extrato: começa no dia seguinte ao último conciliado (o que veio da planilha já está conferido).
@@ -34,7 +35,7 @@ export function Conciliacao() {
   const maior = pend.reduce((m, l) => (l.data > m ? l.data : m), menor)
   // candidatos: lançamentos ainda não conciliados perto das datas do extrato pendente
   const lancs = useAoVivo(['lancamentos', 'extrato_linhas'], () => todas<Lancamento>((a, b) =>
-    supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id').is('excluido_em', null)
+    supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id').eq('espaco_id', espacoId()).is('excluido_em', null)
       .neq('status', 'CONCILIADO').gte('data', isoDia(new Date(Date.parse(menor) - 10 * 86_400_000))).lte('data', isoDia(new Date(Date.parse(maior) + 10 * 86_400_000)))
       .order('id').range(a, b)), [menor, maior])
 
@@ -46,7 +47,7 @@ export function Conciliacao() {
   const conciliadas = useAoVivo(['extrato_linhas', 'lancamentos'], async () => {
     const ls = (linhas.dados ?? []).filter((l) => l.lancamento_id).slice(0, 300)
     if (!ls.length) return [] as { linha: LinhaExtrato; categoria_id: number }[]
-    const r = await dados<{ id: number; categoria_id: number }[]>(supabase.from('lancamentos').select('id,categoria_id').in('id', ls.map((l) => l.lancamento_id!)))
+    const r = await dados<{ id: number; categoria_id: number }[]>(supabase.from('lancamentos').select('id,categoria_id').eq('espaco_id', espacoId()).in('id', ls.map((l) => l.lancamento_id!)))
     const cat = new Map(r.map((x) => [x.id, x.categoria_id]))
     return ls.map((linha) => ({ linha, categoria_id: cat.get(linha.lancamento_id!) ?? 0 }))
   }, [linhas.dados])

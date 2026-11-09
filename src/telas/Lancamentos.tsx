@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAoVivo } from '../lib/vivo'
+import { espacoId } from '../lib/espaco'
 import { dataBR, isoDia, lerValor, moeda } from '../lib/formato'
 import { proximoDiaUtil } from '../lib/feriados'
 import { dados, todas, type Categoria, type Lancamento, type Recorrencia, type Status } from '../lib/tipos'
@@ -15,9 +16,9 @@ export function Lancamentos() {
   const [sel, setSel] = useState<Set<number>>(new Set())
   const [aberto, setAberto] = useState<Lancamento | 'novo' | null>(null)
 
-  const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
+  const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').eq('espaco_id', espacoId()).order('ordem')))
   const lancs = useAoVivo(['lancamentos'], () => todas<Lancamento>((a, b) => {
-    let q = supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id')
+    let q = supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id').eq('espaco_id', espacoId())
       .is('excluido_em', null).gte('data', de).lte('data', ate)
     if (categoria) q = q.eq('categoria_id', Number(categoria))
     if (status) q = q.eq('status', status)
@@ -204,7 +205,7 @@ function dataDaParcela(inicio: string, dia: number, n: number): string {
 }
 
 function Projecoes({ cats }: { cats: Categoria[] }) {
-  const recs = useAoVivo(['recorrencias'], () => dados<Recorrencia[]>(supabase.from('recorrencias').select('*').order('id', { ascending: false })))
+  const recs = useAoVivo(['recorrencias'], () => dados<Recorrencia[]>(supabase.from('recorrencias').select('*').eq('espaco_id', espacoId()).order('id', { ascending: false })))
   const [f, setF] = useState({ categoria: '', valor: '', dia: '10', inicio: isoDia(new Date()), fim: '', parcelas: '', descricao: '' })
   const [msg, setMsg] = useState('')
   const nomeCat = new Map(cats.map((c) => [c.id, c.nome]))
@@ -223,7 +224,7 @@ function Projecoes({ cats }: { cats: Categoria[] }) {
     if (g.error) { setMsg(g.error.message); return }
     if (parcelas) {
       // numera as parcelas na descrição (1/18, 2/18…), na ordem das datas
-      const ls = await dados<{ id: number; versao: number }[]>(supabase.from('lancamentos').select('id,versao')
+      const ls = await dados<{ id: number; versao: number }[]>(supabase.from('lancamentos').select('id,versao').eq('espaco_id', espacoId())
         .eq('recorrencia_id', data.id).is('excluido_em', null).order('data'))
       for (const [i, l] of ls.entries()) {
         const r = await supabase.from('lancamentos').update({ descricao: `${f.descricao ? f.descricao + ' · ' : ''}parcela ${i + 1}/${parcelas}` })

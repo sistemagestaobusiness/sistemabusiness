@@ -19,14 +19,15 @@ React + TypeScript (Vite) nas telas, Supabase (org "Sistema Business", conta con
 - Versão nova: o build gera `versao.json`; a tela avisa sozinha (`src/lib/versao.ts`). Não usar `?v=` manual.
 
 ## Banco
-- Tudo com RLS por `pode_ler()` / `eh_socio()` (tabela `perfis`). Login só com e-mail e senha, sem 2FA (decisão do Alexandre, 08/11/2026), e saída após 30 min sem uso (`useInatividade`). Nada de `using (true)`, nada para `anon`.
+- Espaços (0006): Business = espaço 1; controle pessoal do Alexandre é outro espaço que o Rodrigo NÃO pode ver. Toda tabela de dados tem `espaco_id`; RLS por `pode_ler_espaco(espaco_id)` / `eh_socio_espaco(espaco_id)` (tabela `espaco_membros` + `perfis.ativo`). Toda leitura nas telas filtra `.eq('espaco_id', espacoId())` e todo insert de conta/cliente/linha manda `espaco_id`; lançamento, projeção e extrato herdam o espaço por gatilho. Testar sempre que um sócio da Business não vê nada do pessoal (inclusive auditoria e saldos).
+- Tudo com RLS por espaço (acima) e papel na tabela `perfis`. Login só com e-mail e senha, sem 2FA (decisão do Alexandre, 08/11/2026), e saída após 30 min sem uso (`useInatividade`). Nada de `using (true)`, nada para `anon`.
 - Sem delete: lixeira por `excluido_em`. Auditoria por trigger em toda tabela.
 - Função nova: `set search_path = public`; `revoke execute ... from public, anon; grant ... to authenticated`.
 
 ## Testar antes de entregar
 - `npm run build` e `npx oxlint`.
 - Duas janelas (obrigatório): `npx vite build -c vite.config.teste.ts && node testes/duas-janelas.mjs`. Usa um Supabase simulado (`testes/supabase-simulado.ts`) em que as duas janelas dividem os dados e se avisam como o Realtime.
-- Senha, Lançamentos, Conciliação dividida e Saldo no banco: `node testes/senha.mjs`, `node testes/lancamentos.mjs`, `node testes/dividir.mjs` e `node testes/saldo-banco.mjs` (depois do mesmo build de teste).
+- Senha, Lançamentos, Conciliação dividida, Saldo no banco e Espaços: `node testes/senha.mjs`, `node testes/lancamentos.mjs`, `node testes/dividir.mjs`, `node testes/saldo-banco.mjs` e `node testes/espacos.mjs` (depois do mesmo build de teste).
 - Banco: rodar as migrações num Postgres local com stub de `auth` e testar as regras de acesso.
 
 ## Importação da planilha

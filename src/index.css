@@ -129,3 +129,5 @@ button.chip { padding: 2px 10px; border-radius: 999px; font-size: 12px; }
 .grade th.fds, .grade th.feriado { background: #e4e7ec; }
 .grade td.feriado, .grade th.feriado { background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(180, 35, 24, .06) 6px 8px); }
 .grade th.feriado small { color: var(--verm); }
+.topo select.espaco { width: auto; flex: 0 0 auto; min-width: 0; font-weight: 800; background: transparent; color: inherit; border: 1px solid rgba(255,255,255,.35); border-radius: 6px; padding: 4px 8px; }
+.topo select.espaco option { color: #101828; }

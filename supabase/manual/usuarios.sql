@@ -11,5 +11,10 @@ from (values
 join auth.users u on lower(u.email) = lower(x.email)
 on conflict (user_id) do update set nome = excluded.nome, papel = excluded.papel, ativo = true;
 
+-- quem entra acima acessa a Business (espaço 1) com o mesmo papel; controles pessoais são à parte (espaco_pessoal.sql)
+insert into public.espaco_membros (espaco_id, user_id, papel)
+select 1, p.user_id, p.papel from public.perfis p
+on conflict (espaco_id, user_id) do update set papel = excluded.papel;
+
 -- conferência: deve listar uma linha por pessoa
 select p.nome, p.papel, u.email from public.perfis p join auth.users u on u.id = p.user_id;

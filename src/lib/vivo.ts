@@ -10,8 +10,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 
-export type Tabela = 'contas' | 'clientes' | 'fornecedores' | 'categorias' | 'recorrencias' | 'lancamentos' | 'extrato_linhas'
-const TABELAS: Tabela[] = ['contas', 'clientes', 'fornecedores', 'categorias', 'recorrencias', 'lancamentos', 'extrato_linhas']
+export type Tabela = 'espacos' | 'contas' | 'clientes' | 'fornecedores' | 'categorias' | 'recorrencias' | 'lancamentos' | 'extrato_linhas'
+const TABELAS: Tabela[] = ['espacos', 'contas', 'clientes', 'fornecedores', 'categorias', 'recorrencias', 'lancamentos', 'extrato_linhas']
 
 type Ouvinte = (t: Tabela | '*') => void
 const ouvintes = new Set<Ouvinte>()

@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAoVivo } from '../lib/vivo'
+import { espacoId } from '../lib/espaco'
 import { dataBR, diasDoMes, isoDia, lerValor, moeda } from '../lib/formato'
 
 import { dados, todas, type Categoria, type Lancamento } from '../lib/tipos'
@@ -46,17 +47,17 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
   const ini = dias[0], fim = dias[dias.length - 1]
 
   const cats = useAoVivo(['categorias'], () =>
-    dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
+    dados<Categoria[]>(supabase.from('categorias').select('*').eq('espaco_id', espacoId()).order('ordem')))
   const lancs = useAoVivo(['lancamentos'], () =>
-    todas<Lancamento>((de, ate) => supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id')
+    todas<Lancamento>((de, ate) => supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id').eq('espaco_id', espacoId())
       .is('excluido_em', null).gte('data', ini).lte('data', fim).order('id').range(de, ate)), [ini, fim])
   // saldo vem do banco: tudo que aconteceu antes do dia 1 do mês, de todas as contas
   const saldoIni = useAoVivo(['lancamentos', 'contas', 'categorias'], () =>
-    dados<number>(supabase.rpc('fn_saldo_ate', { p_data: ini })), [ini])
+    dados<number>(supabase.rpc('fn_saldo_ate', { p_data: ini, p_espaco: espacoId() })), [ini])
 
   // saldo do banco no fim de cada dia, calculado no banco a partir do saldo informado e das linhas do extrato
   const banco = useAoVivo(['extrato_linhas', 'contas'], () =>
-    dados<{ data: string; saldo: number }[]>(supabase.rpc('fn_saldo_banco', { p_ini: ini, p_fim: fim })), [ini, fim])
+    dados<{ data: string; saldo: number }[]>(supabase.rpc('fn_saldo_banco', { p_ini: ini, p_fim: fim, p_espaco: espacoId() })), [ini, fim])
   const saldoBanco = useMemo(() => new Map((banco.dados ?? []).map((b) => [b.data, Number(b.saldo)])), [banco.dados])
 
   const porCelula = useMemo(() => {
@@ -218,14 +219,14 @@ function FluxoMeses({ mostrarArquivadas, topo, abrirMes }: PropsMeses) {
   const chaveAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
 
   const cats = useAoVivo(['categorias'], () =>
-    dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
+    dados<Categoria[]>(supabase.from('categorias').select('*').eq('espaco_id', espacoId()).order('ordem')))
   // busca os anos inteiros da janela: as colunas de resultado anual precisam do ano todo
   const lancs = useAoVivo(['lancamentos'], () =>
-    todas<Lancamento>((de, ate) => supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id')
+    todas<Lancamento>((de, ate) => supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id').eq('espaco_id', espacoId())
       .is('excluido_em', null).gte('data', ini).lte('data', fim).order('id').range(de, ate)), [ini, fim])
   // saldo vem do banco: tudo antes de 1º de janeiro do primeiro ano da janela, de todas as contas
   const saldoIni = useAoVivo(['lancamentos', 'contas', 'categorias'], () =>
-    dados<number>(supabase.rpc('fn_saldo_ate', { p_data: ini })), [ini])
+    dados<number>(supabase.rpc('fn_saldo_ate', { p_data: ini, p_espaco: espacoId() })), [ini])
 
   // soma por linha e mês (chave AAAA-MM) e por linha e ano
   const soma = useMemo(() => {
