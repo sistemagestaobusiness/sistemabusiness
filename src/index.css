@@ -110,3 +110,6 @@ tr.clicavel:hover td { background: var(--linha); }
 .cand.prolabore { display: flex; align-items: center; gap: 6px; color: var(--sub); font-size: 12px; }
 button.chip { padding: 2px 10px; border-radius: 999px; font-size: 12px; }
 .grade th.ano, .grade td.ano { background: var(--fundo); border-left: 1px solid var(--borda); }
+.busca { display: flex; gap: 8px; }
+.busca input { flex: 1; }
+.busca select { width: auto; }

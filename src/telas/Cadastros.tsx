@@ -23,6 +23,7 @@ function Clientes() {
   const clientes = useAoVivo(['clientes'], () => dados<Cliente[]>(supabase.from('clientes').select('*').order('nome')))
   const [f, setF] = useState<Omit<Cliente, 'id'> & { id?: number }>(VAZIO)
   const [busca, setBusca] = useState('')
+  const [situacao, setSituacao] = useState<'ATIVO' | 'ENCERRADO' | 'TODOS'>('ATIVO')
   const [msg, setMsg] = useState('')
   const salvar = async (e: FormEvent) => {
     e.preventDefault(); setMsg('')
@@ -37,11 +38,17 @@ function Clientes() {
     }
     setF(VAZIO); setMsg(f.situacao === 'ENCERRADO' ? 'Salvo. A linha do cliente saiu do fluxo.' : 'Salvo.')
   }
-  const lista = (clientes.dados ?? []).filter((c) => c.nome.toLowerCase().includes(busca.toLowerCase()))
+  const lista = (clientes.dados ?? []).filter((c) => c.nome.toLowerCase().includes(busca.toLowerCase())
+    && (situacao === 'TODOS' || c.situacao === situacao))
   return (
     <div className="dois">
       <div>
-        <input placeholder="Buscar cliente" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <div className="busca">
+          <input placeholder="Buscar cliente" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <select value={situacao} onChange={(e) => setSituacao(e.target.value as typeof situacao)} aria-label="Situação">
+            <option value="ATIVO">Ativos</option><option value="ENCERRADO">Encerrados</option><option value="TODOS">Todos</option>
+          </select>
+        </div>
         <ul className="lista">
           {lista.map((c) => (
             <li key={c.id} onClick={() => setF({ ...VAZIO, ...c })} className={f.id === c.id ? 'ativo' : ''} style={{ cursor: 'pointer' }}>
