@@ -62,7 +62,7 @@ try {
   // visão por mês: B olha o ano fechado, A lança no dia a dia, o total do mês muda sozinho em B
   await b.click('.janela >> text=Fechar')
   await b.click('.alternar >> text=Meses')
-  const mesB = b.locator('tr', { hasText: 'Cliente Teste' }).locator('td.cel').nth(new Date().getMonth())
+  const mesB = b.locator('tr', { hasText: 'Cliente Teste' }).locator('td.cel').nth(0)
   await mesB.waitFor()
   ok((await mesB.textContent()).includes('2.000,00'), 'visão por mês soma o mês')
   await celula(a).click()

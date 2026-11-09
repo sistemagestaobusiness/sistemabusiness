@@ -28,8 +28,8 @@ export function Fluxo() {
   const arquivadas = <label className="check"><input type="checkbox" checked={mostrarArquivadas} onChange={(e) => setMostrarArquivadas(e.target.checked)} /> mostrar arquivadas</label>
   return modo === 'dias'
     ? <FluxoDias {...{ ano, setAno, mes, setMes, mostrarArquivadas }} topo={<>{alternar}{arquivadas}</>} />
-    : <FluxoMeses {...{ ano, setAno, mostrarArquivadas }} topo={<>{alternar}{arquivadas}</>}
-        abrirMes={(m) => { setMes(m); setModo('dias') }} />
+    : <FluxoMeses mostrarArquivadas={mostrarArquivadas} topo={<>{alternar}{arquivadas}</>}
+        abrirMes={(a, m) => { setAno(a); setMes(m); setModo('dias') }} />
 }
 
 type PropsDias = { ano: number; setAno: (n: number) => void; mes: number; setMes: (n: number) => void; mostrarArquivadas: boolean; topo: ReactNode }
@@ -155,75 +155,104 @@ function FluxoDias({ ano, setAno, mes, setMes, mostrarArquivadas, topo }: PropsD
   )
 }
 
-type PropsMeses = { ano: number; setAno: (n: number) => void; mostrarArquivadas: boolean; topo: ReactNode; abrirMes: (m: number) => void }
+type PropsMeses = { mostrarArquivadas: boolean; topo: ReactNode; abrirMes: (ano: number, mes: number) => void }
+type Col = { chave: string; ano: number; mes: number }
+const CHAVE_INICIO = 'business_fluxo_meses_inicio'
 
-// Ano fechado por mês: cada célula é a soma do mês; saldo no fim de cada mês. Clique leva para o mês, dia a dia.
-function FluxoMeses({ ano, setAno, mostrarArquivadas, topo, abrirMes }: PropsMeses) {
+// 12 meses corridos a partir do mês escolhido (padrão: o mês atual, para olhar a projeção),
+// mais o total dos 12 meses e o resultado de cada ano que aparece na janela.
+// Cada célula é a soma do mês; saldo no fim de cada mês. Clique leva para o mês, dia a dia.
+function FluxoMeses({ mostrarArquivadas, topo, abrirMes }: PropsMeses) {
   const hoje = new Date()
-  const meses = Array.from({ length: 12 }, (_, i) => i + 1)
-  const ini = `${ano}-01-01`, fim = `${ano}-12-31`
-  const mesAtual = hoje.getFullYear() === ano ? hoje.getMonth() + 1 : 0
+  const atual = hoje.getFullYear() * 12 + hoje.getMonth()
+  const [inicio, setInicioBruto] = useState<number>(() => {
+    try { const v = Number(sessionStorage.getItem(CHAVE_INICIO)); return v > 0 ? v : atual } catch { return atual }
+  })
+  const setInicio = (n: number) => { setInicioBruto(n); try { sessionStorage.setItem(CHAVE_INICIO, String(n)) } catch { /* só não lembra */ } }
+  const cols: Col[] = useMemo(() => Array.from({ length: 12 }, (_, i) => {
+    const n = inicio + i, ano = Math.floor(n / 12), mes = (n % 12) + 1
+    return { chave: `${ano}-${String(mes).padStart(2, '0')}`, ano, mes }
+  }), [inicio])
+  const anos = [...new Set(cols.map((c) => c.ano))]
+  const ini = `${anos[0]}-01-01`, fim = `${anos[anos.length - 1]}-12-31`
+  const chaveAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
 
   const cats = useAoVivo(['categorias'], () =>
     dados<Categoria[]>(supabase.from('categorias').select('*').order('ordem')))
+  // busca os anos inteiros da janela: as colunas de resultado anual precisam do ano todo
   const lancs = useAoVivo(['lancamentos'], () =>
     todas<Lancamento>((de, ate) => supabase.from('lancamentos').select('id,data,valor,categoria_id,descricao,status,versao,recorrencia_id')
       .is('excluido_em', null).gte('data', ini).lte('data', fim).order('id').range(de, ate)), [ini, fim])
-  // saldo vem do banco: tudo antes de 1º de janeiro, de todas as contas
+  // saldo vem do banco: tudo antes de 1º de janeiro do primeiro ano da janela, de todas as contas
   const saldoIni = useAoVivo(['lancamentos', 'contas', 'categorias'], () =>
     dados<number>(supabase.rpc('fn_saldo_ate', { p_data: ini })), [ini])
 
-  const porCelula = useMemo(() => {
-    const m = new Map<string, Lancamento[]>()
+  // soma por linha e mês (chave AAAA-MM) e por linha e ano
+  const soma = useMemo(() => {
+    const m = new Map<string, { v: number; prev: number; n: number; nPrev: number }>()
+    const add = (k: string, l: Lancamento) => {
+      const x = m.get(k) ?? { v: 0, prev: 0, n: 0, nPrev: 0 }
+      x.v += Number(l.valor); x.n++
+      if (l.status === 'PREVISTO') { x.prev += Number(l.valor); x.nPrev++ }
+      m.set(k, x)
+    }
     for (const l of lancs.dados ?? []) {
-      const k = `${l.categoria_id}|${Number(l.data.slice(5, 7))}`
-      m.set(k, [...(m.get(k) ?? []), l])
+      add(`${l.categoria_id}|${l.data.slice(0, 7)}`, l)
+      add(`${l.categoria_id}|${l.data.slice(0, 4)}`, l)
     }
     return m
   }, [lancs.dados])
-  const comMovimento = useMemo(() => new Set((lancs.dados ?? []).map((l) => l.categoria_id)), [lancs.dados])
+  const comMovimento = useMemo(() => new Set((lancs.dados ?? []).filter((l) => cols.some((c) => l.data.startsWith(c.chave))).map((l) => l.categoria_id)), [lancs.dados, cols])
   const visiveis = (cats.dados ?? []).filter((c) => mostrarArquivadas || !c.arquivada || comMovimento.has(c.id))
   const tipoDe = useMemo(() => new Map((cats.dados ?? []).map((c) => [c.id, c.tipo])), [cats.dados])
 
-  const totais = useMemo(() => {
-    const t = meses.map(() => ({ ENTRADA: 0, SAIDA: 0 }))
+  // totais por mês (todos os meses dos anos buscados) e saldo no fim de cada mês
+  const porMes = useMemo(() => {
+    const t = new Map<string, { ENTRADA: number; SAIDA: number }>()
     for (const l of lancs.dados ?? []) {
-      const tipo = tipoDe.get(l.categoria_id)
-      if (tipo) t[Number(l.data.slice(5, 7)) - 1][tipo] += Number(l.valor)
+      const tipo = tipoDe.get(l.categoria_id); if (!tipo) continue
+      const k = l.data.slice(0, 7)
+      const x = t.get(k) ?? { ENTRADA: 0, SAIDA: 0 }
+      x[tipo] += Number(l.valor); t.set(k, x)
     }
-    return t
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lancs.dados, tipoDe])
-  const saldos = useMemo(() => {
+    const saldo = new Map<string, number>()
     let s = Number(saldoIni.dados ?? 0)
-    return totais.map((t) => (s += t.ENTRADA - t.SAIDA))
-  }, [totais, saldoIni.dados])
+    for (const a of anos) for (let m = 1; m <= 12; m++) {
+      const k = `${a}-${String(m).padStart(2, '0')}`, x = t.get(k)
+      s += (x?.ENTRADA ?? 0) - (x?.SAIDA ?? 0); saldo.set(k, s)
+    }
+    return { t, saldo }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lancs.dados, tipoDe, saldoIni.dados, ini, fim])
+  const doMes = (k: string, tipo: 'ENTRADA' | 'SAIDA') => porMes.t.get(k)?.[tipo] ?? 0
+  const doAno = (a: number, tipo: 'ENTRADA' | 'SAIDA') => [...porMes.t].filter(([k]) => k.startsWith(`${a}-`)).reduce((x, [, v]) => x + v[tipo], 0)
+  const dos12 = (tipo: 'ENTRADA' | 'SAIDA') => cols.reduce((x, c) => x + doMes(c.chave, tipo), 0)
 
   const secoes = (tipo: 'ENTRADA' | 'SAIDA') => {
     const lista = visiveis.filter((c) => c.tipo === tipo)
     return [...new Set(lista.map((c) => c.secao))].map((s) => ({ secao: s, cats: lista.filter((c) => c.secao === s) }))
   }
   const erro = cats.erro || lancs.erro || saldoIni.erro
+  const vazio = (v: number) => (v ? moeda(v) : '')
+  const nCols = cols.length + 1 + anos.length
 
   const linha = (c: Categoria) => {
-    let total = 0
+    const total = cols.reduce((x, k) => x + (soma.get(`${c.id}|${k.chave}`)?.v ?? 0), 0)
     return (
       <tr key={c.id} className={c.arquivada ? 'arquivada' : ''} style={c.cor ? { background: c.cor } : undefined}>
         <th className="fixa" style={c.cor ? { background: c.cor } : undefined}>{c.nome}{c.arquivada && <span className="tag">arquivada</span>}</th>
-        {meses.map((m) => {
-          const ls = porCelula.get(`${c.id}|${m}`) ?? []
-          const v = ls.reduce((x, l) => x + Number(l.valor), 0)
-          total += v
-          const prev = ls.filter((l) => l.status === 'PREVISTO').reduce((x, l) => x + Number(l.valor), 0)
-          const classe = ls.length && ls.every((l) => l.status === 'PREVISTO') ? 'previsto' : ''
+        {cols.map((k) => {
+          const x = soma.get(`${c.id}|${k.chave}`)
+          const classe = x && x.n === x.nPrev ? 'previsto' : ''
           return (
-            <td key={m} className={`cel mes ${classe} ${m === mesAtual ? 'hoje' : ''}`} onClick={() => abrirMes(m)}
-                title={prev && !classe ? `${moeda(prev)} ainda previsto` : 'Abrir o mês dia a dia'}>
-              {v ? moeda(v) : ''}
+            <td key={k.chave} className={`cel mes ${classe} ${k.chave === chaveAtual ? 'hoje' : ''}`} onClick={() => abrirMes(k.ano, k.mes)}
+                title={x?.prev && !classe ? `${moeda(x.prev)} ainda previsto` : 'Abrir o mês dia a dia'}>
+              {vazio(x?.v ?? 0)}
             </td>
           )
         })}
-        <td className="total">{total ? moeda(total) : ''}</td>
+        <td className="total">{vazio(total)}</td>
+        {anos.map((a) => <td key={a} className="total ano">{vazio(soma.get(`${c.id}|${a}`)?.v ?? 0)}</td>)}
       </tr>
     )
   }
@@ -231,27 +260,30 @@ function FluxoMeses({ ano, setAno, mostrarArquivadas, topo, abrirMes }: PropsMes
     <>
       {secoes(tipo).map(({ secao, cats: cs }) => (
         <tbody key={tipo + secao}>
-          <tr className="secao"><th className="fixa">{secao}</th><td colSpan={13} /></tr>
+          <tr className="secao"><th className="fixa">{secao}</th><td colSpan={nCols} /></tr>
           {cs.map(linha)}
         </tbody>
       ))}
       <tbody>
         <tr className="soma">
           <th className="fixa">{titulo}</th>
-          {totais.map((t, i) => <td key={i}>{t[tipo] ? moeda(t[tipo]) : ''}</td>)}
-          <td className="total">{moeda(totais.reduce((a, t) => a + t[tipo], 0))}</td>
+          {cols.map((k) => <td key={k.chave}>{vazio(doMes(k.chave, tipo))}</td>)}
+          <td className="total">{moeda(dos12(tipo))}</td>
+          {anos.map((a) => <td key={a} className="total ano">{moeda(doAno(a, tipo))}</td>)}
         </tr>
       </tbody>
     </>
   )
+  const resultado = (e: number, s: number) => { const r = e - s; return <span className={r < 0 ? 'neg' : ''}>{moeda(r)}</span> }
+  const ultimo = cols[cols.length - 1]
 
   return (
     <section>
       <div className="barra">
-        <button onClick={() => setAno(ano - 1)}>‹</button>
-        <strong>{ano}</strong>
-        <button onClick={() => setAno(ano + 1)}>›</button>
-        <button onClick={() => setAno(hoje.getFullYear())}>Hoje</button>
+        <button onClick={() => setInicio(inicio - 1)} title="Um mês para trás">‹</button>
+        <strong>{MESES[cols[0].mes - 1].slice(0, 3)}/{cols[0].ano} a {MESES[ultimo.mes - 1].slice(0, 3)}/{ultimo.ano}</strong>
+        <button onClick={() => setInicio(inicio + 1)} title="Um mês para frente">›</button>
+        <button onClick={() => setInicio(atual)}>Hoje</button>
         {topo}
         <span className="legenda"><i className="previsto" /> mês todo previsto · clique no mês para ver dia a dia</span>
       </div>
@@ -259,22 +291,25 @@ function FluxoMeses({ ano, setAno, mostrarArquivadas, topo, abrirMes }: PropsMes
       <div className="grade">
         <table className="meses">
           <thead>
-            <tr><th className="fixa">Saldo inicial: {moeda(Number(saldoIni.dados ?? 0))}</th>
-              {meses.map((m) => <th key={m} className={m === mesAtual ? 'hoje' : ''}>{MESES[m - 1].slice(0, 3)}</th>)}
-              <th>Total</th></tr>
+            <tr><th className="fixa">Saldo inicial: {moeda(porMes.saldo.get(`${cols[0].ano - (cols[0].mes === 1 ? 1 : 0)}-${String(cols[0].mes === 1 ? 12 : cols[0].mes - 1).padStart(2, '0')}`) ?? Number(saldoIni.dados ?? 0))}</th>
+              {cols.map((k) => <th key={k.chave} className={k.chave === chaveAtual ? 'hoje' : ''}>{MESES[k.mes - 1].slice(0, 3)}/{String(k.ano).slice(2)}</th>)}
+              <th>12 meses</th>
+              {anos.map((a) => <th key={a} className="ano">Ano {a}</th>)}</tr>
           </thead>
           {blocoTipo('ENTRADA', 'Total entradas')}
           {blocoTipo('SAIDA', 'Total pagamentos')}
           <tbody>
             <tr className="soma">
-              <th className="fixa">Resultado do mês</th>
-              {totais.map((t, i) => { const r = t.ENTRADA - t.SAIDA; return <td key={i} className={r < 0 ? 'neg' : ''}>{moeda(r)}</td> })}
-              <td className="total">{moeda(totais.reduce((a, t) => a + t.ENTRADA - t.SAIDA, 0))}</td>
+              <th className="fixa">Resultado</th>
+              {cols.map((k) => <td key={k.chave}>{resultado(doMes(k.chave, 'ENTRADA'), doMes(k.chave, 'SAIDA'))}</td>)}
+              <td className="total">{resultado(dos12('ENTRADA'), dos12('SAIDA'))}</td>
+              {anos.map((a) => <td key={a} className="total ano">{resultado(doAno(a, 'ENTRADA'), doAno(a, 'SAIDA'))}</td>)}
             </tr>
             <tr className="saldo">
               <th className="fixa">Saldo no fim do mês</th>
-              {saldos.map((s, i) => <td key={i} className={s < 0 ? 'neg' : ''}>{moeda(s)}</td>)}
-              <td className="total">{moeda(saldos[11] ?? 0)}</td>
+              {cols.map((k) => { const v = porMes.saldo.get(k.chave) ?? 0; return <td key={k.chave} className={v < 0 ? 'neg' : ''}>{moeda(v)}</td> })}
+              <td className="total">{moeda(porMes.saldo.get(ultimo.chave) ?? 0)}</td>
+              {anos.map((a) => { const v = porMes.saldo.get(`${a}-12`) ?? 0; return <td key={a} className={`total ano ${v < 0 ? 'neg' : ''}`} title={`Saldo em 31/12/${a}`}>{moeda(v)}</td> })}
             </tr>
           </tbody>
         </table>
