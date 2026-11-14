@@ -11,6 +11,7 @@ React + TypeScript (Vite) nas telas, Supabase (org "Sistema Business", conta con
 - Testar toda migração antes num Postgres local (stub do schema `auth` + roles `anon`/`authenticated`), incluindo: sócio grava, usuário sem perfil não vê nada, contabilidade só lê, delete negado.
 
 ## Atualização automática (o erro da Drogarema não pode voltar)
+- Regra obrigatória do Alexandre (14/11/2026): toda tela é ao vivo. Qualquer cadastro, edição, exclusão, valor ou texto alterado por um usuário aparece na hora para todos e em todas as telas, contas, pagamentos e relatórios ligados àquele dado, sem botão de atualizar e sem fechar a tela. Nenhuma entrega sem testar com duas telas abertas (incluindo a outra janela em OUTRA tela que usa o mesmo dado: `testes/ao-vivo-telas.mjs`).
 - TODA leitura de dados nas telas passa por `useAoVivo` (`src/lib/vivo.ts`), declarando as tabelas de que depende. Nunca buscar dados só no carregamento da tela.
 - Tabela nova que aparece em tela entra na `publication supabase_realtime` e na lista `TABELAS` de `vivo.ts`.
 - Saldo é calculado no banco (`fn_saldo_ate`; saldo do extrato: `fn_saldo_banco`), nunca só na tela.
@@ -27,7 +28,7 @@ React + TypeScript (Vite) nas telas, Supabase (org "Sistema Business", conta con
 ## Testar antes de entregar
 - `npm run build` e `npx oxlint`.
 - Duas janelas (obrigatório): `npx vite build -c vite.config.teste.ts && node testes/duas-janelas.mjs`. Usa um Supabase simulado (`testes/supabase-simulado.ts`) em que as duas janelas dividem os dados e se avisam como o Realtime.
-- Senha, Lançamentos, Conciliação dividida, Saldo no banco e Espaços: `node testes/senha.mjs`, `node testes/lancamentos.mjs`, `node testes/dividir.mjs`, `node testes/saldo-banco.mjs` e `node testes/espacos.mjs` (depois do mesmo build de teste).
+- Senha, Lançamentos, Conciliação dividida, Saldo no banco, Espaços e Telas ao vivo: `node testes/senha.mjs`, `node testes/lancamentos.mjs`, `node testes/dividir.mjs`, `node testes/saldo-banco.mjs`, `node testes/espacos.mjs` e `node testes/ao-vivo-telas.mjs` (depois do mesmo build de teste).
 - Banco: rodar as migrações num Postgres local com stub de `auth` e testar as regras de acesso.
 
 ## Importação da planilha

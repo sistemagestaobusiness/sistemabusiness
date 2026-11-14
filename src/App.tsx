@@ -40,7 +40,7 @@ function Dentro({ email, versaoNova, saindo, tela }: { email?: string; versaoNov
   const [trocandoSenha, setTrocandoSenha] = useState(false)
   const [senhaTrocada, setSenhaTrocada] = useState(false)
   // espaços que a pessoa pode ver (o banco só devolve os dela). Business sempre é o 1.
-  const espacos = useAoVivo(['espacos'], () => dados<Espaco[]>(supabase.from('espacos').select('id,nome').order('id')))
+  const espacos = useAoVivo(['espacos', 'espaco_membros'], () => dados<Espaco[]>(supabase.from('espacos').select('id,nome').order('id')))
   const esp = useEspaco()
   const lista = espacos.dados ?? []
   const valido = lista.some((e) => e.id === esp)
