@@ -1,7 +1,11 @@
-# Todo dia: um acesso ao Supabase para o plano grátis não pausar o projeto
+# Todo dia: um acesso de verdade ao Supabase para o plano grátis não pausar o projeto
 # (ele pausa depois de 7 dias sem uso, e o sistema às vezes fica 30 dias sem acesso).
-# Usa só as variáveis públicas SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY (Settings > Secrets and variables > Actions > Variables).
-# A consulta chega ao banco e é recusada pelas regras de acesso (sem login não se vê nada): é o esperado.
+# Em 15/11/2026 o projeto foi pausado mesmo com o acesso anônimo diário (que era recusado
+# pelas regras de acesso e não contou como uso). Agora a rotina faz login com um usuário-robô
+# e consulta o banco, como um usuário de verdade.
+# O robô é um usuário do Auth SEM linha em perfis: pelas regras de acesso ele não vê nada.
+# Variáveis (Settings > Secrets and variables > Actions > Variables): SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY.
+# Segredos (mesma tela, aba Secrets): ROBO_EMAIL, ROBO_SENHA.
 # Se o Supabase não responder, a rotina falha e o GitHub manda e-mail.
 name: Manter o Supabase ativo
 on:
@@ -12,10 +16,34 @@ jobs:
   ativo:
     runs-on: ubuntu-24.04
     steps:
-      - name: Acesso à API e ao banco
+      - name: Login do robô e consulta ao banco
+        env:
+          URL: ${{ vars.SUPABASE_URL }}
+          CHAVE: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          EMAIL: ${{ secrets.ROBO_EMAIL }}
+          SENHA: ${{ secrets.ROBO_SENHA }}
         run: |
-          set -u
-          c=$(curl -sS -o /dev/null -w "%{http_code}" "${{ vars.SUPABASE_URL }}/rest/v1/categorias?select=id&limit=1" \
-                -H "apikey: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}")
-          echo "Supabase respondeu $c"
-          case "$c" in 2*|401|403) exit 0 ;; *) echo "::error::Supabase não respondeu como esperado ($c)"; exit 1 ;; esac
+          set -euo pipefail
+          falha() { echo "::error::$1"; exit 1; }
+          test -n "$URL" && test -n "$CHAVE" || falha "Faltam as variáveis SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY"
+          test -n "$EMAIL" && test -n "$SENHA" || falha "Faltam os segredos ROBO_EMAIL e ROBO_SENHA"
+          # 1) Login (grava a sessão no banco do Auth); tenta 3 vezes se a rede falhar
+          corpo=$(jq -n --arg e "$EMAIL" --arg s "$SENHA" '{email:$e,password:$s}')
+          for i in 1 2 3; do
+            curl -sS --max-time 30 -o login.json -w "%{http_code}" "$URL/auth/v1/token?grant_type=password" \
+              -H "apikey: $CHAVE" -H "Content-Type: application/json" -d "$corpo" > login.code && break
+            [ $i = 3 ] && falha "Supabase não respondeu ao login (projeto pausado ou endereço mudou?)"
+            sleep 20
+          done
+          [ "$(cat login.code)" = 200 ] || falha "Login do robô recusado ($(cat login.code)): confira ROBO_EMAIL e ROBO_SENHA"
+          token=$(jq -r .access_token login.json); rm -f login.json
+          echo "::add-mask::$token"
+
+          # 2) Consulta ao banco como usuário logado (o robô não vê linhas: resposta 200 com [])
+          c=$(curl -sS --max-time 30 -o /dev/null -w "%{http_code}" "$URL/rest/v1/categorias?select=id&limit=1" \
+                -H "apikey: $CHAVE" -H "Authorization: Bearer $token" || true)
+          echo "Login ok; banco respondeu $c"
+          [ "$c" = 200 ] || falha "Banco não respondeu como esperado ($c)"
+
+          # 3) Sai (encerra a sessão do robô)
+          curl -sS --max-time 30 -o /dev/null -X POST "$URL/auth/v1/logout" -H "apikey: $CHAVE" -H "Authorization: Bearer $token" || true
