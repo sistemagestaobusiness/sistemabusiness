@@ -14,6 +14,8 @@ export function Lancamentos() {
   const [categoria, setCategoria] = useState('')
   const [status, setStatus] = useState('')
   const [texto, setTexto] = useState('')
+  const [tipo, setTipo] = useState<'' | Categoria['tipo']>('')
+  const [verArquivadas, setVerArquivadas] = useState(false)
   const [sel, setSel] = useState<Set<number>>(new Set())
   const [aberto, setAberto] = useState<Lancamento | 'novo' | null>(null)
 
@@ -28,7 +30,16 @@ export function Lancamentos() {
   }), [de, ate, categoria, status, texto])
 
   const nomeCat = useMemo(() => new Map((cats.dados ?? []).map((c) => [c.id, c])), [cats.dados])
-  const lista = lancs.dados ?? []
+  // tipo (crédito/débito) e arquivadas são filtrados aqui, pelas linhas do fluxo: as duas leituras são ao vivo
+  const lista = (lancs.dados ?? []).filter((l) => {
+    const c = nomeCat.get(l.categoria_id)
+    if (!c) return true
+    if (tipo && c.tipo !== tipo) return false
+    if (!verArquivadas && c.arquivada && String(c.id) !== categoria) return false
+    return true
+  })
+  const catsFiltro = (cats.dados ?? []).filter((c) => (!tipo || c.tipo === tipo) && (verArquivadas || !c.arquivada || String(c.id) === categoria))
+  const somaTipo = (t: Categoria['tipo']) => lista.reduce((a, l) => a + (nomeCat.get(l.categoria_id)?.tipo === t ? Number(l.valor) : 0), 0)
   // a seleção só vale para o que está na lista agora (se alguém excluir, sai da seleção sozinho)
   const selecionados = lista.filter((l) => sel.has(l.id))
   const total = (ls: Lancamento[]) => ls.reduce((a, l) => a + (nomeCat.get(l.categoria_id)?.tipo === 'SAIDA' ? -1 : 1) * Number(l.valor), 0)
@@ -40,10 +51,17 @@ export function Lancamentos() {
       <div className="filtros">
         <label>De<input type="date" value={de} onChange={(e) => setDe(e.target.value)} /></label>
         <label>Até<input type="date" value={ate} onChange={(e) => setAte(e.target.value)} /></label>
-        <label>Linha do fluxo<SelectCategoria cats={cats.dados ?? []} value={categoria} onChange={setCategoria} vazio="Todas" /></label>
+        <label>Tipo<select value={tipo} onChange={(e) => {
+          const t = e.target.value as typeof tipo
+          setTipo(t)
+          if (t && categoria && nomeCat.get(Number(categoria))?.tipo !== t) setCategoria('')
+        }}>
+          <option value="">Todos</option><option value="ENTRADA">Crédito (entradas)</option><option value="SAIDA">Débito (pagamentos)</option></select></label>
+        <label>Linha do fluxo<SelectCategoria cats={catsFiltro} value={categoria} onChange={setCategoria} vazio="Todas" /></label>
         <label>Situação<select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Todas</option><option value="PREVISTO">Previsto</option><option value="REALIZADO">Realizado</option><option value="CONCILIADO">Conciliado</option></select></label>
         <label>Descrição contém<input value={texto} onChange={(e) => setTexto(e.target.value)} /></label>
+        <label className="check" title="Desmarcado: só linhas ativas no filtro e na lista"><input type="checkbox" checked={verArquivadas} onChange={(e) => setVerArquivadas(e.target.checked)} /> mostrar arquivadas</label>
       </div>
       {(lancs.erro || cats.erro) && <p className="aviso">{lancs.erro || cats.erro}</p>}
 
@@ -54,7 +72,7 @@ export function Lancamentos() {
           <thead><tr>
             <th><input type="checkbox" checked={lista.length > 0 && selecionados.length === lista.length}
               onChange={(e) => setSel(e.target.checked ? new Set(lista.map((l) => l.id)) : new Set())} /></th>
-            <th>Data</th><th>Linha do fluxo</th><th>Descrição</th><th>Situação</th><th className="num">Valor</th></tr></thead>
+            <th>Data</th><th>Linha do fluxo</th><th>Tipo</th><th>Descrição</th><th>Situação</th><th className="num">Valor</th></tr></thead>
           <tbody>
             {lista.map((l) => {
               const c = nomeCat.get(l.categoria_id)
@@ -63,15 +81,16 @@ export function Lancamentos() {
                   <td onClick={(e) => { e.stopPropagation(); alternar(l.id) }}><input type="checkbox" checked={sel.has(l.id)} readOnly /></td>
                   <td>{dataBR(l.data)}</td>
                   <td>{c?.nome}{l.recorrencia_id && <span className="tag">projeção</span>}</td>
+                  <td className={c?.tipo === 'SAIDA' ? 'neg' : 'pos'}>{c ? (c.tipo === 'SAIDA' ? 'débito' : 'crédito') : ''}</td>
                   <td className="sub">{l.descricao}</td>
                   <td><span className={`status s-${l.status.toLowerCase()}`}>{l.status.toLowerCase()}</span></td>
                   <td className={`num ${c?.tipo === 'SAIDA' ? 'neg' : ''}`}>{c?.tipo === 'SAIDA' ? '−' : ''}{moeda(Number(l.valor))}</td>
                 </tr>
               )
             })}
-            {lancs.dados && lista.length === 0 && <tr><td colSpan={6} className="sub">Nenhum lançamento com esses filtros.</td></tr>}
+            {lancs.dados && lista.length === 0 && <tr><td colSpan={7} className="sub">Nenhum lançamento com esses filtros.</td></tr>}
           </tbody>
-          <tfoot><tr><td colSpan={5}>{lista.length} lançamentos · entradas − pagamentos</td><td className="num">{moeda(total(lista))}</td></tr></tfoot>
+          <tfoot><tr><td colSpan={6}>{lista.length} lançamentos · créditos {moeda(somaTipo('ENTRADA'))} − débitos {moeda(somaTipo('SAIDA'))} =</td><td className="num">{moeda(total(lista))}</td></tr></tfoot>
         </table>
       </div>
 

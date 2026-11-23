@@ -86,6 +86,8 @@ main { padding: 16px; }
 .tabela tfoot td { position: sticky; bottom: 0; background: #f7f8fa; font-weight: 700; }
 .tabela .num { text-align: right; white-space: nowrap; }
 .tabela .neg { color: var(--verm); }
+.tabela .pos { color: var(--verde); }
+.filtros .check { flex: 0 0 auto; min-width: 0; height: 36px; }
 .tabela tbody tr { cursor: default; }
 .tabela tr.sel { background: #eef4ff; }
 .tabela input[type=checkbox] { width: auto; }
