@@ -11,9 +11,50 @@ const ler = (t: string): Linha[] => {
 }
 // como o gatilho do banco: lançamento, projeção e extrato herdam o espaço da linha do fluxo / da conta
 const herdarEspaco = (t: string, v: Record<string, unknown>) => {
+  if (t === 'recorrencias') v = fimDasParcelas(v)
   if (t === 'lancamentos' || t === 'recorrencias') return { ...v, espaco_id: ler('categorias').find((c) => c.id === v.categoria_id)?.espaco_id ?? 1 }
   if (t === 'extrato_linhas') return { ...v, espaco_id: ler('contas').find((c) => c.id === v.conta_id)?.espaco_id ?? 1 }
   return v
+}
+// como o SQL 0008 (sem o ajuste para dia útil): mês a mês, dia 31 vira o último dia do mês
+const mesDe = (iso: string) => { const [a, m] = iso.split('-').map(Number); return a * 12 + m - 1 }
+const dataNoMes = (mes: number, dia: number) => {
+  const a = Math.floor(mes / 12), m = mes % 12, ult = new Date(a, m + 1, 0).getDate()
+  return `${a}-${String(m + 1).padStart(2, '0')}-${String(Math.min(dia, ult)).padStart(2, '0')}`
+}
+const primeiroMes = (r: Record<string, unknown>) => { const m = mesDe(String(r.inicio)); return dataNoMes(m, Number(r.dia)) < String(r.inicio) ? m + 1 : m }
+function fimDasParcelas(v: Record<string, unknown>) {
+  return v.parcelas ? { ...v, fim: dataNoMes(primeiroMes(v) + Number(v.parcelas) - 1, Number(v.dia)) } : v
+}
+function aplicarRecorrencia(id: number) {
+  const r = ler('recorrencias').find((x) => x.id === id)!
+  let ls = ler('lancamentos'); let novoId = proximoId('lancamentos')
+  const ini = primeiroMes(r)
+  let fimM = r.fim ? mesDe(String(r.fim)) : mesDe(String(r.inicio)) + 23
+  if (r.fim && dataNoMes(fimM, Number(r.dia)) > String(r.fim)) fimM--
+  const res = { alteradas: 0, criadas: 0, excluidas: 0, mantidas: 0 }
+  const daRec = (l: Linha) => l.recorrencia_id === id
+  ls = ls.map((l) => {
+    if (!daRec(l) || l.excluido_em || l.status !== 'PREVISTO') return l
+    const m = mesDe(String(l.data)); if (m >= ini && m <= fimM) return l
+    res.excluidas++; return { ...l, excluido_em: new Date().toISOString(), recorrencia_id: null, versao: Number(l.versao) + 1 }
+  })
+  for (let m = ini, i = 1; m <= fimM; m++, i++) {
+    const descricao = r.parcelas ? `${r.descricao ? r.descricao + ' · ' : ''}parcela ${i}/${r.parcelas}` : r.descricao ?? null
+    const doMes = ls.filter((l) => daRec(l) && mesDe(String(l.data)) === m)
+    if (doMes.some((l) => !l.excluido_em && l.status !== 'PREVISTO')) { res.mantidas++; continue }
+    const prev = doMes.filter((l) => !l.excluido_em)
+    if (prev.length) {
+      ls = ls.map((l) => prev.includes(l) ? { ...l, data: dataNoMes(m, Number(r.dia)), valor: r.valor, categoria_id: r.categoria_id, descricao, versao: Number(l.versao) + 1 } : l)
+      res.alteradas += prev.length
+    } else if (!doMes.length) {
+      ls.push({ id: novoId++, data: dataNoMes(m, Number(r.dia)), valor: r.valor, categoria_id: r.categoria_id, descricao, status: 'PREVISTO',
+        recorrencia_id: id, espaco_id: r.espaco_id, versao: 1, excluido_em: null })
+      res.criadas++
+    }
+  }
+  gravar('lancamentos', ls); avisar('lancamentos')
+  return res
 }
 const gravar = (t: string, ls: Linha[]) => localStorage.setItem('sim_' + t, JSON.stringify(ls))
 const bc = new BroadcastChannel('sim-realtime')
@@ -61,7 +102,7 @@ class Consulta implements PromiseLike<{ data: unknown; error: null | { message: 
     }
     if (this.op === 'update') {
       const alvo = ls.filter((l) => this.filtros.every((f) => f(l)))
-      ls = ls.map((l) => alvo.includes(l) ? { ...l, ...this.valores, versao: Number(l.versao ?? 1) + 1 } : l)
+      ls = ls.map((l) => alvo.includes(l) ? herdarEspaco(this.tabela, { ...l, ...this.valores, versao: Number(l.versao ?? 1) + 1 }) as Linha : l)
       gravar(this.tabela, ls); if (alvo.length) avisar(this.tabela)
       return { data: alvo.map((l) => ({ id: l.id })), error: null }
     }
@@ -105,6 +146,25 @@ function rpc(nome: string, p: Record<string, unknown>) {
     gravar('extrato_linhas', ex.map((y) => y.id === p.p_linha ? { ...y, dividida: true } : y))
     avisar('lancamentos'); avisar('extrato_linhas')
     return Promise.resolve({ data: partes.length, error: null })
+  }
+  if (nome === 'fn_gerar_recorrencia') return Promise.resolve({ data: aplicarRecorrencia(Number(p.p_id)).criadas, error: null })
+  if (nome === 'fn_editar_recorrencia') {
+    const rs = ler('recorrencias'), r = rs.find((x) => x.id === p.p_id)
+    if (!r) return Promise.resolve({ data: null, error: { message: `Projeção ${p.p_id} não existe` } })
+    if (Number(r.versao ?? 1) !== p.p_versao) return Promise.resolve({ data: null, error: { message: 'Esta projeção foi alterada por outra pessoa enquanto você editava. Feche, confira e edite de novo.' } })
+    // como o SQL: só o dia mudou → mesmos meses (início no dia 1 do mês da primeira parcela, fim no último dia do da última)
+    let inicio = p.p_inicio, fim = p.p_fim ?? null
+    if (p.p_dia !== r.dia) {
+      if (inicio === r.inicio) inicio = dataNoMes(primeiroMes(r), 1)
+      if (!p.p_parcelas && r.fim && fim === r.fim) {
+        let ult = mesDe(String(r.fim)); if (dataNoMes(ult, Number(r.dia)) > String(r.fim)) ult--
+        fim = dataNoMes(ult, 31)
+      }
+    }
+    const novo = herdarEspaco('recorrencias', { ...r, categoria_id: p.p_categoria, valor: p.p_valor, dia: p.p_dia, inicio,
+      fim: p.p_parcelas ? null : fim, parcelas: p.p_parcelas ?? null, descricao: String(p.p_descricao ?? '').trim() || null, versao: Number(r.versao ?? 1) + 1 }) as Linha
+    gravar('recorrencias', rs.map((x) => x.id === r.id ? novo : x)); avisar('recorrencias')
+    return new Promise((res) => setTimeout(() => res({ data: aplicarRecorrencia(r.id), error: null }), 20))
   }
   if (nome === 'fn_saldo_banco') {
     // igual ao SQL 0005: saldo informado + extrato até o dia − extrato até o dia informado

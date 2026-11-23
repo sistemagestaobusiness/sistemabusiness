@@ -2,7 +2,7 @@ export type Categoria = { id: number; nome: string; tipo: 'ENTRADA' | 'SAIDA'; s
 export type Status = 'PREVISTO' | 'REALIZADO' | 'CONCILIADO'
 export type Lancamento = { id: number; data: string; valor: number; categoria_id: number; descricao: string | null; status: Status; versao: number; recorrencia_id: number | null }
 export type Cliente = { id: number; nome: string; documento: string | null; contato: string | null; email: string | null; telefone: string | null; forma_cobranca: 'BOLETO' | 'TRANSFERENCIA' | 'PIX'; situacao: 'ATIVO' | 'ENCERRADO'; obs: string | null }
-export type Recorrencia = { id: number; descricao: string | null; categoria_id: number; valor: number; dia: number; inicio: string; fim: string | null; ativa: boolean }
+export type Recorrencia = { id: number; descricao: string | null; categoria_id: number; valor: number; dia: number; inicio: string; fim: string | null; ativa: boolean; parcelas: number | null; versao: number }
 
 export async function dados<T>(p: PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T> {
   const { data, error } = await p
