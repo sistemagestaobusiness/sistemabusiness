@@ -147,6 +147,20 @@ function rpc(nome: string, p: Record<string, unknown>) {
     avisar('lancamentos'); avisar('extrato_linhas')
     return Promise.resolve({ data: partes.length, error: null })
   }
+  if (nome === 'fn_ajuste_massa') {
+    // como o SQL 0001: só os não excluídos; p_excluir manda para a lixeira
+    const ids = new Set(p.p_ids as number[]); let n = 0
+    gravar('lancamentos', ler('lancamentos').map((l) => {
+      if (!ids.has(l.id as number) || l.excluido_em) return l
+      n++
+      const pc = p.p_percentual as number | undefined
+      return { ...l, valor: p.p_valor ?? (pc != null ? Math.round(Number(l.valor) * (1 + pc / 100) * 100) / 100 : l.valor),
+        categoria_id: p.p_categoria ?? l.categoria_id, status: p.p_status ?? l.status,
+        excluido_em: p.p_excluir ? new Date().toISOString() : l.excluido_em, versao: Number(l.versao) + 1 }
+    }))
+    avisar('lancamentos')
+    return new Promise((res) => setTimeout(() => res({ data: n, error: null }), 20))
+  }
   if (nome === 'fn_gerar_recorrencia') return Promise.resolve({ data: aplicarRecorrencia(Number(p.p_id)).criadas, error: null })
   if (nome === 'fn_editar_recorrencia') {
     const rs = ler('recorrencias'), r = rs.find((x) => x.id === p.p_id)

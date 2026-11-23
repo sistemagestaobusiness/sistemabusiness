@@ -180,7 +180,7 @@ export function SelectCategoria({ cats, value, onChange, vazio }: { cats: Catego
 }
 
 function AjusteMassa({ ids, cats, total, limpar }: { ids: number[]; cats: Categoria[]; total: number; limpar: () => void }) {
-  const [acao, setAcao] = useState<'valor' | 'percentual' | 'dias' | 'categoria' | 'status' | 'excluir'>('valor')
+  const [acao, setAcao] = useState<'valor' | 'percentual' | 'dias' | 'categoria' | 'status'>('valor')
   const [v, setV] = useState('')
   const [msg, setMsg] = useState('')
   const aplicar = async (e: FormEvent) => {
@@ -191,10 +191,20 @@ function AjusteMassa({ ids, cats, total, limpar }: { ids: number[]; cats: Catego
     if (acao === 'dias') { const n = parseInt(v, 10); if (!Number.isFinite(n)) { setMsg('Número de dias inválido.'); return } p.p_dias = n }
     if (acao === 'categoria') { if (!v) { setMsg('Escolha a linha.'); return } p.p_categoria = Number(v) }
     if (acao === 'status') { if (!v) { setMsg('Escolha a situação.'); return } p.p_status = v }
-    if (acao === 'excluir') { if (!confirm(`Mandar ${ids.length} lançamentos para a lixeira?`)) return; p.p_excluir = true }
     const { data, error } = await supabase.rpc('fn_ajuste_massa', p)
     if (error) { setMsg(error.message); return }
     setMsg(`${data} lançamentos ajustados.`); setV('')
+  }
+  // exclusão em massa: vai para a lixeira (excluido_em), como a exclusão de um lançamento só
+  const [excluindo, setExcluindo] = useState(false)
+  const excluir = async () => {
+    setMsg('')
+    if (excluindo || !confirm(`Excluir ${ids.length} lançamento${ids.length > 1 ? 's' : ''} (total ${moeda(total)})?\n\nEles vão para a lixeira e saem do fluxo e dos saldos.`)) return
+    setExcluindo(true)
+    const { data, error } = await supabase.rpc('fn_ajuste_massa', { p_ids: ids, p_excluir: true })
+    setExcluindo(false)
+    if (error) { setMsg(error.message); return }
+    setMsg(`${data} lançamentos excluídos.`); limpar()
   }
   return (
     <form className="massa" onSubmit={aplicar}>
@@ -202,7 +212,7 @@ function AjusteMassa({ ids, cats, total, limpar }: { ids: number[]; cats: Catego
       <select value={acao} onChange={(e) => { setAcao(e.target.value as typeof acao); setV('') }}>
         <option value="valor">Trocar o valor para</option><option value="percentual">Reajustar em %</option>
         <option value="dias">Mover a data em dias</option><option value="categoria">Mudar a linha do fluxo para</option>
-        <option value="status">Mudar a situação para</option><option value="excluir">Mandar para a lixeira</option>
+        <option value="status">Mudar a situação para</option>
       </select>
       {(acao === 'valor' || acao === 'percentual' || acao === 'dias') &&
         <input value={v} onChange={(e) => setV(e.target.value)} placeholder={acao === 'valor' ? '1.234,56' : acao === 'percentual' ? '5 ou -3,5' : '30 ou -2'} />}
@@ -211,6 +221,7 @@ function AjusteMassa({ ids, cats, total, limpar }: { ids: number[]; cats: Catego
         <option value="PREVISTO">Previsto</option><option value="REALIZADO">Realizado</option><option value="CONCILIADO">Conciliado</option></select>}
       <button>Aplicar</button>
       <button type="button" className="link" onClick={limpar}>Limpar seleção</button>
+      <button type="button" className="excluir" onClick={excluir} disabled={excluindo}>Excluir selecionados</button>
       {msg && <span className="sub">{msg}</span>}
     </form>
   )

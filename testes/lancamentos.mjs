@@ -74,6 +74,20 @@ try {
   await b.locator('tbody tr', { hasText: 'receita teste' }).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
   ok(await b.locator('tbody tr', { hasText: 'receita teste' }).count() === 0, 'linha arquivada em Cadastros some na hora da tela Lançamentos aberta')
   await b.selectOption('.filtros label:has-text("Tipo") select', '')
+  // exclusão em massa: seleciona dois, confirma (com quantidade e total) e somem nas duas janelas
+  await b.check('.filtros .check input')
+  if (await b.locator('text=Limpar seleção').count()) await b.click('text=Limpar seleção')
+  for (const t of ['aluguel sala', 'receita antiga']) await b.locator('tbody tr', { hasText: t }).locator('td').first().click()
+  let pergunta = ''
+  b.once('dialog', (d) => { pergunta = d.message(); d.accept() })
+  await b.click('text=Excluir selecionados')
+  await b.locator('tbody tr', { hasText: 'aluguel sala' }).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+  ok(pergunta.includes('2 lançamentos') && pergunta.includes('-2.450,00'), `confirmação mostra quantidade e total (${pergunta.split('\n')[0]})`)
+  ok(await b.locator('tbody tr', { hasText: 'aluguel sala' }).count() === 0 && await b.locator('tbody tr', { hasText: 'receita antiga' }).count() === 0 && await b.locator('.massa').count() === 0, 'excluídos somem e a seleção é limpa')
+  await a.locator('tbody tr', { hasText: 'aluguel sala' }).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+  ok(await a.locator('tbody tr', { hasText: 'aluguel sala' }).count() === 0, 'exclusão em massa some sozinha na outra janela')
+  const lixo = await b.evaluate(() => JSON.parse(localStorage.getItem('sim_lancamentos')).filter((l) => l.excluido_em).length)
+  ok(lixo === 2, 'foram para a lixeira (excluido_em), não apagados')
   await b.screenshot({ path: 'testes/lancamentos-filtros.png' })
   await a.screenshot({ path: 'testes/lancamentos.png' })
 } catch (e) { falhas.push(String(e)); console.log('✗ ' + e) } finally { await browser.close(); srv.kill() }

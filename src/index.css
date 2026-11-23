@@ -94,6 +94,7 @@ main { padding: 16px; }
 .massa { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #eef4ff; border: 1px solid #c7d7fe; border-radius: 10px; padding: 10px; margin-bottom: 12px; }
 .massa select, .massa input { width: auto; }
 .massa button:not(.link) { background: var(--azul); color: #fff; border: 0; }
+.massa button.excluir { background: var(--verm); margin-left: auto; }
 .bloco { background: var(--card); border: 1px solid var(--borda); border-radius: 10px; padding: 16px; margin-top: 16px; }
 .bloco h3 { margin: 0 0 4px; font-size: 15px; }
 .bloco form button:not(.link) { background: var(--txt); color: #fff; border: 0; }
