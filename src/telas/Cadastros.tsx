@@ -90,10 +90,19 @@ function Clientes() {
   )
 }
 
+// Seções fixas de cada tipo (as da planilha). Não se cria seção digitando: um nome diferente abria uma seção nova no fluxo.
+const SECOES: Record<Categoria['tipo'], string[]> = {
+  ENTRADA: ['Sócios', 'Clientes', 'BPO', 'Outros'],
+  SAIDA: ['Pagamentos', 'Dívidas, consórcios e aplicações'],
+}
+// orig: como a linha estava ao abrir a edição (a tela ao vivo atualiza a linha enquanto se edita)
+type Edicao = { id: number; nome: string; secao: string; orig: { nome: string; secao: string } }
+
 function Linhas() {
   const cats = useAoVivo(['categorias'], () => dados<Categoria[]>(supabase.from('categorias').select('*').eq('espaco_id', espacoId()).order('ordem')))
   const [verArquivadas, setVerArquivadas] = useState(false)
-  const [nova, setNova] = useState({ nome: '', tipo: 'ENTRADA', secao: 'Clientes' })
+  const [nova, setNova] = useState<{ nome: string; tipo: Categoria['tipo']; secao: string }>({ nome: '', tipo: 'SAIDA', secao: 'Pagamentos' })
+  const [ed, setEd] = useState<Edicao | null>(null)
   const [msg, setMsg] = useState('')
   const lista = cats.dados ?? []
   const alterar = async (c: Categoria, campos: Partial<Categoria>) => {
@@ -106,14 +115,26 @@ function Linhas() {
     if (!o) return
     await alterar(c, { ordem: o.ordem }); await alterar(o, { ordem: c.ordem })
   }
+  const fimDaSecao = (tipo: string, secao: string) => Math.max(0, ...lista.filter((x) => x.tipo === tipo && x.secao === secao).map((x) => x.ordem)) + 1
+  const salvarEdicao = async (c: Categoria) => {
+    if (!ed || !ed.nome.trim()) return
+    setMsg('')
+    const campos: Partial<Categoria> = { nome: ed.nome.trim(), secao: ed.secao }
+    if (ed.secao !== ed.orig.secao) campos.ordem = fimDaSecao(c.tipo, ed.secao)
+    // só grava se ninguém mudou a linha desde que a edição foi aberta (a tabela não tem coluna versao)
+    const q = supabase.from('categorias').update(campos).eq('id', c.id).eq('nome', ed.orig.nome).eq('secao', ed.orig.secao)
+    const { data, error } = await q.select('id')
+    if (error) { setMsg(error.message); return }
+    if (!data?.length) { setMsg('Outra pessoa alterou esta linha antes. Confira os dados atualizados e edite de novo.'); return }
+    setEd(null)
+  }
   const criar = async (e: FormEvent) => {
     e.preventDefault(); setMsg('')
-    const ordem = Math.max(0, ...lista.filter((x) => x.secao === nova.secao).map((x) => x.ordem)) + 1
+    const ordem = fimDaSecao(nova.tipo, nova.secao)
     const { error } = await supabase.from('categorias').insert({ ...nova, ordem, espaco_id: espacoId() } as never)
     if (error) { setMsg(error.message); return }
     setNova({ ...nova, nome: '' })
   }
-  const secoes = [...new Set(lista.map((c) => c.secao))]
   return (
     <div>
       <p className="sub">Linha arquivada sai da tela de fluxo, mas os lançamentos dela continuam no saldo: no fluxo eles aparecem somados na linha “Arquivadas (somadas)”. Cliente marcado como encerrado arquiva a linha dele sozinho.</p>
@@ -121,9 +142,8 @@ function Linhas() {
       {msg && <p className="aviso">{msg}</p>}
       <form className="filtros" onSubmit={criar}>
         <label>Nova linha<input value={nova.nome} onChange={(e) => setNova({ ...nova, nome: e.target.value })} required /></label>
-        <label>Tipo<select value={nova.tipo} onChange={(e) => setNova({ ...nova, tipo: e.target.value })}><option value="ENTRADA">Entrada</option><option value="SAIDA">Pagamento</option></select></label>
-        <label>Seção<input list="secoes" value={nova.secao} onChange={(e) => setNova({ ...nova, secao: e.target.value })} required /></label>
-        <datalist id="secoes">{secoes.map((s) => <option key={s} value={s} />)}</datalist>
+        <label>Tipo<select value={nova.tipo} onChange={(e) => { const tipo = e.target.value as Categoria['tipo']; setNova({ ...nova, tipo, secao: SECOES[tipo][0] }) }}><option value="ENTRADA">Entrada</option><option value="SAIDA">Pagamento</option></select></label>
+        <label>Seção<select value={nova.secao} onChange={(e) => setNova({ ...nova, secao: e.target.value })}>{SECOES[nova.tipo].map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
         <button>Adicionar</button>
       </form>
       <div className="tabela">
@@ -131,14 +151,27 @@ function Linhas() {
           <thead><tr><th>Linha</th><th>Tipo</th><th>Seção</th><th>Cor</th><th>Ordem</th><th></th></tr></thead>
           <tbody>
             {lista.filter((c) => verArquivadas || !c.arquivada).map((c) => (
+              ed?.id === c.id ? (
+                <tr key={c.id} className="editando">
+                  <td><input value={ed.nome} onChange={(e) => setEd({ ...ed, nome: e.target.value })} aria-label="Nome da linha" autoFocus /></td>
+                  <td title="O tipo não muda: trocar inverteria o sinal dos lançamentos já feitos nesta linha.">{c.tipo === 'ENTRADA' ? 'Entrada' : 'Pagamento'}</td>
+                  <td><select value={ed.secao} onChange={(e) => setEd({ ...ed, secao: e.target.value })} aria-label="Seção">
+                    {!SECOES[c.tipo].includes(ed.secao) && <option value={ed.secao}>{ed.secao} (fora da lista)</option>}
+                    {SECOES[c.tipo].map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select></td>
+                  <td colSpan={2} />
+                  <td><button className="link" onClick={() => salvarEdicao(c)}>salvar</button> <button className="link" onClick={() => setEd(null)}>cancelar</button></td>
+                </tr>
+              ) : (
               <tr key={c.id} className={c.arquivada ? 'arquivada' : ''}>
                 <td style={c.cor ? { background: c.cor } : undefined}>{c.nome}</td>
                 <td>{c.tipo === 'ENTRADA' ? 'Entrada' : 'Pagamento'}</td>
                 <td>{c.secao}</td>
                 <td><input type="color" value={c.cor ?? '#ffffff'} onChange={(e) => alterar(c, { cor: e.target.value === '#ffffff' ? null : e.target.value })} style={{ width: 40, padding: 0 }} /></td>
                 <td><button className="link" onClick={() => mover(c, -1)}>↑</button><button className="link" onClick={() => mover(c, 1)}>↓</button></td>
-                <td><button className="link" onClick={() => alterar(c, { arquivada: !c.arquivada })}>{c.arquivada ? 'desarquivar' : 'arquivar'}</button></td>
+                <td><button className="link" onClick={() => setEd({ id: c.id, nome: c.nome, secao: c.secao, orig: { nome: c.nome, secao: c.secao } })}>editar</button> <button className="link" onClick={() => alterar(c, { arquivada: !c.arquivada })}>{c.arquivada ? 'desarquivar' : 'arquivar'}</button></td>
               </tr>
+              )
             ))}
           </tbody>
         </table>

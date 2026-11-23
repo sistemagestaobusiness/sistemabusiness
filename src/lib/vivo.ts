@@ -8,7 +8,7 @@
 // 4. Recarregar troca só os dados: janelas abertas e o que está sendo digitado continuam onde estavam.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
-import { supabase } from './supabase'
+import { supabase, aoGravar } from './supabase'
 
 export type Tabela = 'espacos' | 'espaco_membros' | 'contas' | 'clientes' | 'fornecedores' | 'categorias' | 'recorrencias' | 'lancamentos' | 'extrato_linhas'
 const TABELAS: Tabela[] = ['espacos', 'espaco_membros', 'contas', 'clientes', 'fornecedores', 'categorias', 'recorrencias', 'lancamentos', 'extrato_linhas']
@@ -25,6 +25,9 @@ function avisar(t: Tabela | '*') {
   ouvintes.forEach((o) => o(t))
   ouvintesEstado.forEach((o) => o())
 }
+// gravação feita nesta janela: recarrega já (não espera o Realtime)
+aoGravar.add((t) => { if (t === '*') avisar('*'); else if ((TABELAS as string[]).includes(t)) avisar(t as Tabela) })
+
 function mudarEstado(e: typeof estado) {
   const caiu = estado === 'desconectado' && e === 'ao vivo' && ultimaAtualizacao !== null
   estado = e
