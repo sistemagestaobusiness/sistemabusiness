@@ -190,6 +190,8 @@ function rpc(nome: string, p: Record<string, unknown>) {
 }
 
 export const configurado = true
+// o simulado já avisa a própria janela ao gravar; existe só para o vivo.ts importar
+export const aoGravar = new Set<(tabela: string) => void>()
 export const supabase = {
   from: (t: string) => new Consulta(t),
   rpc,
