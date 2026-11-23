@@ -4,6 +4,7 @@ import { desligarTempoReal, ligarTempoReal, useAoVivo, useEstadoTempoReal } from
 import { setEspaco, useEspaco } from './lib/espaco'
 import { dados } from './lib/tipos'
 import { useVersaoNova } from './lib/versao'
+import { useFundo } from './lib/fundo'
 import { useInatividade, useSessao } from './auth/sessao'
 import { FormSenha, Login } from './auth/Login'
 import { Fluxo } from './telas/Fluxo'
@@ -38,6 +39,7 @@ type Espaco = { id: number; nome: string }
 
 function Dentro({ email, versaoNova, saindo, tela }: { email?: string; versaoNova: boolean; saindo: boolean; tela: Tela }) {
   const [trocandoSenha, setTrocandoSenha] = useState(false)
+  const fundoSenha = useFundo(() => setTrocandoSenha(false))
   const [senhaTrocada, setSenhaTrocada] = useState(false)
   // espaços que a pessoa pode ver (o banco só devolve os dela). Business sempre é o 1.
   const espacos = useAoVivo(['espacos', 'espaco_membros'], () => dados<Espaco[]>(supabase.from('espacos').select('id,nome').order('id')))
@@ -66,7 +68,7 @@ function Dentro({ email, versaoNova, saindo, tela }: { email?: string; versaoNov
         <button className="link" onClick={() => supabase.auth.signOut()}>Sair</button>
       </header>
       {trocandoSenha && (
-        <div className="fundo" onClick={() => setTrocandoSenha(false)}>
+        <div className="fundo" {...fundoSenha}>
           <div className="janela login-card" onClick={(e) => e.stopPropagation()}>
             <header><strong>Trocar senha</strong><button className="link" onClick={() => setTrocandoSenha(false)}>Fechar</button></header>
             {senhaTrocada ? <p>Senha trocada. Use a nova no próximo acesso.</p>

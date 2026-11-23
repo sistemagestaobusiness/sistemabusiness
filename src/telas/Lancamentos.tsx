@@ -4,6 +4,7 @@ import { useAoVivo } from '../lib/vivo'
 import { espacoId } from '../lib/espaco'
 import { dataBR, isoDia, lerValor, moeda } from '../lib/formato'
 import { proximoDiaUtil } from '../lib/feriados'
+import { useFundo } from '../lib/fundo'
 import { dados, todas, type Categoria, type Lancamento, type Recorrencia, type Status } from '../lib/tipos'
 
 export function Lancamentos() {
@@ -84,6 +85,7 @@ export function Lancamentos() {
 // Lançamento novo ou edição de um da lista: data, linha, valor, descrição e situação.
 // Grava com a versão de quando abriu: se alguém mudou no meio, avisa em vez de sobrescrever.
 function JanelaLancamento({ original, cats, fechar }: { original: Lancamento | null; cats: Categoria[]; fechar: () => void }) {
+  const fundo = useFundo(fechar)
   const hojeIso = isoDia(new Date())
   const [data, setData] = useState(original?.data ?? hojeIso)
   const [categoria, setCategoria] = useState(original ? String(original.categoria_id) : '')
@@ -120,7 +122,7 @@ function JanelaLancamento({ original, cats, fechar }: { original: Lancamento | n
   }
 
   return (
-    <div className="fundo" onClick={fechar}>
+    <div className="fundo" {...fundo}>
       <div className="janela" onClick={(e) => e.stopPropagation()}>
         <header><strong>{original ? 'Editar lançamento' : 'Novo lançamento'}</strong><button className="link" onClick={fechar}>Fechar</button></header>
         {original?.status === 'CONCILIADO' && <p className="sub">Este lançamento já foi conciliado com o extrato. Para mudar valor ou data, desfaça a conciliação na tela Conciliação.</p>}
@@ -253,6 +255,7 @@ function Projecoes({ cats }: { cats: Categoria[] }) {
 // Edita uma projeção e todas as parcelas PREVISTAS dela de uma vez (no banco, numa transação só).
 // O formulário guarda o que foi digitado; se outra pessoa mudar a projeção no meio, o banco recusa e a tela avisa.
 function JanelaProjecao({ rec, cats, fechar, avisar }: { rec: Recorrencia; cats: Categoria[]; fechar: () => void; avisar: (m: string) => void }) {
+  const fundo = useFundo(fechar)
   const [versao] = useState(rec.versao)
   const [f, setF] = useState({
     categoria: String(rec.categoria_id), valor: moeda(Number(rec.valor)), dia: String(rec.dia), inicio: rec.inicio,
@@ -293,7 +296,7 @@ function JanelaProjecao({ rec, cats, fechar, avisar }: { rec: Recorrencia; cats:
   }
 
   return (
-    <div className="fundo" onClick={fechar}>
+    <div className="fundo" {...fundo}>
       <div className="janela" onClick={(e) => e.stopPropagation()}>
         <header><strong>Editar projeção</strong><button className="link" onClick={fechar}>Fechar</button></header>
         <p className="sub">Vale para as {previstas} parcelas previstas desta projeção{feitas ? `; as ${feitas} já realizadas ou conciliadas não mudam` : ''}.

@@ -74,9 +74,38 @@ try {
   await b.waitForFunction(() => [...document.querySelectorAll('tr')].some((t) => t.textContent.includes('Cliente Teste') && t.textContent.includes('2.500,00')), null, { timeout: 3000 }).catch(() => {})
   ok((await mesB.textContent()).includes('2.500,00'), 'visão por mês em B atualizou sozinha')
   await b.screenshot({ path: 'testes/fluxo-meses.png' })
+  // clique no VALOR do mês abre os lançamentos que formam aquele valor (não o dia a dia)
   await mesB.click()
+  await b.locator('.janela').waitFor({ timeout: 3000 }).catch(() => {})
+  ok(await b.locator('.alternar button.ativo', { hasText: 'Meses' }).count() === 1 && await b.locator('.janela .lista li').count() === 2,
+    'clique no valor do mês abre os lançamentos daquele mês (e continua na visão Meses)')
+  ok((await b.locator('.janela').textContent()).includes('total 2.500,00'), 'janela do mês mostra o total que está na célula')
+  // A edita no dia a dia: a janela do mês aberta em B muda sozinha
+  await celula(a).click(); await a.locator('.janela .lista li', { hasText: '500,00' }).locator('text=editar').click()
+  await a.fill('input[placeholder^="1.234,56"]', '600'); await a.click('text=Salvar')
+  await b.locator('.janela .lista li', { hasText: '600,00' }).waitFor({ timeout: 3000 }).catch(() => {})
+  ok(await b.locator('.janela .lista li', { hasText: '600,00' }).count() === 1 && await b.locator('.janela').count() === 1, 'janela do mês em B atualizou sozinha sem fechar')
+  // B edita pela janela do mês: o dia a dia de A muda
+  await b.locator('.janela .lista li', { hasText: '600,00' }).locator('text=editar').click()
+  // selecionar o valor arrastando o mouse e soltar fora da janela NÃO fecha a janela
+  const campo = await b.locator('input[placeholder^="1.234,56"]').boundingBox()
+  await b.mouse.move(campo.x + campo.width - 4, campo.y + campo.height / 2); await b.mouse.down()
+  await b.mouse.move(5, 5, { steps: 5 }); await b.mouse.up()
+  await b.waitForTimeout(200)
+  ok(await b.locator('.janela').count() === 1, 'selecionar o valor do campo arrastando para fora não fecha a janela')
+  await b.click('input[placeholder^="1.234,56"]', { clickCount: 3 })
+  ok(await b.locator('.janela').count() === 1, 'clique triplo no campo (selecionar tudo) não fecha a janela')
+  await b.fill('input[placeholder^="1.234,56"]', '650'); await b.click('text=Salvar')
+  await celula(a).click()
+  await a.locator('.janela .lista li', { hasText: '650,00' }).waitFor({ timeout: 3000 }).catch(() => {})
+  ok(await a.locator('.janela .lista li', { hasText: '650,00' }).count() === 1, 'edição feita na janela do mês em B apareceu no dia a dia de A')
+  // clique no fundo escuro ainda fecha
+  await a.mouse.click(5, 5)
+  ok(await a.locator('.janela').count() === 0, 'clique no fundo escuro fecha a janela')
+  // clique no cabeçalho do mês continua levando para o dia a dia
+  await b.locator('table.meses thead th.clicavel').first().click()
   await celula(b).waitFor({ timeout: 3000 }).catch(() => {})
-  ok(await b.locator('.alternar button.ativo', { hasText: 'Dias' }).count() === 1 && await celula(b).count() === 1, 'clique no mês abre o dia a dia daquele mês')
+  ok(await b.locator('.alternar button.ativo', { hasText: 'Dias' }).count() === 1 && await celula(b).count() === 1, 'clique no cabeçalho do mês abre o dia a dia daquele mês')
 
   await a.screenshot({ path: 'testes/fluxo.png' })
 } finally {

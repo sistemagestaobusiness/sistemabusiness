@@ -6,6 +6,7 @@ import { dataBR, diasDoMes, isoDia, lerValor, moeda } from '../lib/formato'
 
 import { dados, todas, type Categoria, type Lancamento } from '../lib/tipos'
 import { feriado, fimDeSemana, proximoDiaUtil, siglaDia } from '../lib/feriados'
+import { useFundo } from '../lib/fundo'
 
 // sábado, domingo e feriado ficam com a coluna cinza (o banco não compensa nesses dias)
 const classeDia = (d: string) => (feriado(d) ? 'feriado' : fimDeSemana(d) ? 'fds' : '')
@@ -202,9 +203,11 @@ const CHAVE_INICIO = 'business_fluxo_meses_inicio'
 
 // 12 meses corridos a partir do mês escolhido (padrão: o mês atual, para olhar a projeção),
 // mais o total dos 12 meses e o resultado de cada ano que aparece na janela.
-// Cada célula é a soma do mês; saldo no fim de cada mês. Clique leva para o mês, dia a dia.
+// Cada célula é a soma do mês; saldo no fim de cada mês. Clique na célula abre os lançamentos
+// daquela linha no mês (mesma janela da visão Dias); clique no cabeçalho do mês leva para o dia a dia.
 function FluxoMeses({ mostrarArquivadas, topo, abrirMes }: PropsMeses) {
   const hoje = new Date()
+  const [celula, setCelula] = useState<{ categoria: Categoria; mes: string } | null>(null)
   const atual = hoje.getFullYear() * 12 + hoje.getMonth()
   const [inicio, setInicioBruto] = useState<number>(() => {
     try { const v = Number(sessionStorage.getItem(CHAVE_INICIO)); return v > 0 ? v : atual } catch { return atual }
@@ -296,8 +299,8 @@ function FluxoMeses({ mostrarArquivadas, topo, abrirMes }: PropsMeses) {
           const x = soma.get(`${c.id}|${k.chave}`)
           const classe = x && x.n === x.nPrev ? 'previsto' : ''
           return (
-            <td key={k.chave} className={`cel mes ${classe} ${k.chave === chaveAtual ? 'hoje' : ''}`} onClick={() => abrirMes(k.ano, k.mes)}
-                title={x?.prev && !classe ? `${moeda(x.prev)} ainda previsto` : 'Abrir o mês dia a dia'}>
+            <td key={k.chave} className={`cel mes ${classe} ${k.chave === chaveAtual ? 'hoje' : ''}`} onClick={() => setCelula({ categoria: c, mes: k.chave })}
+                title={x?.prev && !classe ? `${moeda(x.prev)} ainda previsto` : 'Ver os lançamentos do mês'}>
               {vazio(x?.v ?? 0)}
             </td>
           )
@@ -346,14 +349,15 @@ function FluxoMeses({ mostrarArquivadas, topo, abrirMes }: PropsMeses) {
         <button onClick={() => setInicio(inicio + 1)} title="Um mês para frente">›</button>
         <button onClick={() => setInicio(atual)}>Hoje</button>
         {topo}
-        <span className="legenda"><i className="previsto" /> mês todo previsto · clique no mês para ver dia a dia</span>
+        <span className="legenda"><i className="previsto" /> mês todo previsto · clique no valor para ver os lançamentos, no mês para ver dia a dia</span>
       </div>
       {erro && <p className="aviso">Não consegui carregar: {erro}</p>}
       <div className="grade">
         <table className="meses">
           <thead>
             <tr><th className="fixa">Saldo inicial: {moeda(porMes.saldo.get(`${cols[0].ano - (cols[0].mes === 1 ? 1 : 0)}-${String(cols[0].mes === 1 ? 12 : cols[0].mes - 1).padStart(2, '0')}`) ?? Number(saldoIni.dados ?? 0))}</th>
-              {cols.map((k) => <th key={k.chave} className={k.chave === chaveAtual ? 'hoje' : ''}>{MESES[k.mes - 1].slice(0, 3)}/{String(k.ano).slice(2)}</th>)}
+              {cols.map((k) => <th key={k.chave} className={`clicavel ${k.chave === chaveAtual ? 'hoje' : ''}`} onClick={() => abrirMes(k.ano, k.mes)}
+                title="Abrir o mês dia a dia">{MESES[k.mes - 1].slice(0, 3)}/{String(k.ano).slice(2)}</th>)}
               <th>12 meses</th>
               {anos.map((a) => <th key={a} className="ano">Ano {a}</th>)}</tr>
           </thead>
@@ -375,20 +379,35 @@ function FluxoMeses({ mostrarArquivadas, topo, abrirMes }: PropsMeses) {
           </tbody>
         </table>
       </div>
+      {celula && (
+        <JanelaCelula categoria={celula.categoria} mes={celula.mes}
+          lancamentos={(lancs.dados ?? []).filter((l) => l.categoria_id === celula.categoria.id && l.data.startsWith(celula.mes))
+            .sort((a, b) => a.data.localeCompare(b.data) || a.id - b.id)}
+          fechar={() => setCelula(null)} />
+      )}
     </section>
   )
 }
 
 // A janela recebe os lançamentos AO VIVO: se o Rodrigo lançar na mesma célula, aparece aqui sem fechar a janela.
-function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Categoria; dia: string; lancamentos: Lancamento[]; fechar: () => void }) {
+// Serve às duas visões: célula de um dia (visão Dias) ou de um mês inteiro (visão Meses, com a data de cada lançamento).
+type PropsJanela = { categoria: Categoria; lancamentos: Lancamento[]; fechar: () => void } & ({ dia: string; mes?: never } | { mes: string; dia?: never })
+function JanelaCelula({ categoria, dia: diaFixo, mes, lancamentos, fechar }: PropsJanela) {
+  const fundo = useFundo(fechar)
+  const hojeIso = isoDia(new Date())
+  // na visão Meses o lançamento novo começa em hoje (se for este mês) ou no dia 1º
+  const diaPadrao = diaFixo ?? (hojeIso.startsWith(mes!) ? hojeIso : `${mes}-01`)
+  const [data, setData] = useState(diaPadrao)
+  const dia = diaFixo ?? data
   const [editando, setEditando] = useState<Lancamento | null>(null)
   const [valor, setValor] = useState('')
   const [descricao, setDescricao] = useState('')
-  const [status, setStatus] = useState<Lancamento['status']>(() => (dia <= isoDia(new Date()) ? 'REALIZADO' : 'PREVISTO'))
+  const [status, setStatus] = useState<Lancamento['status']>(() => (diaPadrao <= hojeIso ? 'REALIZADO' : 'PREVISTO'))
   const [msg, setMsg] = useState('')
 
-  const editar = (l: Lancamento) => { setEditando(l); setValor(moeda(Number(l.valor))); setDescricao(l.descricao ?? ''); setStatus(l.status); setMsg('') }
-  const limpar = () => { setEditando(null); setValor(''); setDescricao(''); setMsg('') }
+  const editar = (l: Lancamento) => { setEditando(l); setData(l.data); setValor(moeda(Number(l.valor))); setDescricao(l.descricao ?? ''); setStatus(l.status); setMsg('') }
+  const limpar = () => { setEditando(null); setData(diaPadrao); setValor(''); setDescricao(''); setMsg('') }
+  const [ano, m] = (mes ?? '').split('-').map(Number)
 
   const salvar = async (e: FormEvent) => {
     e.preventDefault()
@@ -396,10 +415,10 @@ function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Cate
     if (!v) { setMsg('Valor inválido.'); return }
     if (editando) {
       // só grava se ninguém alterou esse lançamento enquanto você editava
-      const { data, error } = await supabase.from('lancamentos')
-        .update({ valor: v, descricao: descricao || null, status }).eq('id', editando.id).eq('versao', editando.versao).select('id')
+      const { data: gravados, error } = await supabase.from('lancamentos')
+        .update({ valor: v, descricao: descricao || null, status, ...(mes && data !== editando.data ? { data } : {}) }).eq('id', editando.id).eq('versao', editando.versao).select('id')
       if (error) { setMsg(error.message); return }
-      if (!data?.length) { setMsg('Esse lançamento foi alterado por outra pessoa enquanto você editava. Confira o valor atual na lista e edite de novo.'); return }
+      if (!gravados?.length) { setMsg('Esse lançamento foi alterado por outra pessoa enquanto você editava. Confira o valor atual na lista e edite de novo.'); return }
     } else {
       const { error } = await supabase.from('lancamentos').insert({ data: dia, valor: v, categoria_id: categoria.id, descricao: descricao || null, status })
       if (error) { setMsg(error.message); return }
@@ -414,14 +433,17 @@ function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Cate
   }
 
   return (
-    <div className="fundo" onClick={fechar}>
-      <div className="janela" onClick={(e) => e.stopPropagation()}>
-        <header><div><strong>{categoria.nome}</strong><span>{dataBR(dia)} · {siglaDia(dia)}{feriado(dia) ? ` · ${feriado(dia)}` : ''} · {categoria.tipo === 'ENTRADA' ? 'Entrada' : 'Pagamento'}</span></div>
+    <div className="fundo" {...fundo}>
+      <div className="janela">
+        <header><div><strong>{categoria.nome}</strong><span>{mes ? `${MESES[m - 1]}/${ano}` : `${dataBR(dia)} · ${siglaDia(dia)}${feriado(dia) ? ` · ${feriado(dia)}` : ''}`} · {categoria.tipo === 'ENTRADA' ? 'Entrada' : 'Pagamento'}</span></div>
           <button className="link" onClick={fechar}>Fechar</button></header>
+        {mes && lancamentos.length > 0 && <p className="sub">{lancamentos.length} lançamento{lancamentos.length > 1 ? 's' : ''} · total {moeda(lancamentos.reduce((a, l) => a + Number(l.valor), 0))}</p>}
+        {mes && !lancamentos.length && <p className="sub">Nenhum lançamento nesta linha no mês.</p>}
         {lancamentos.length > 0 && (
           <ul className="lista">
             {lancamentos.map((l) => (
               <li key={l.id} className={editando?.id === l.id ? 'ativo' : ''}>
+                {mes && <span className="data">{dataBR(l.data).slice(0, 5)}</span>}
                 <span className="valor">{moeda(Number(l.valor))}</span>
                 <span className="desc">{l.descricao || '—'}</span>
                 <span className={`status s-${l.status.toLowerCase()}`}>{l.status.toLowerCase()}</span>
@@ -433,6 +455,8 @@ function JanelaCelula({ categoria, dia, lancamentos, fechar }: { categoria: Cate
         )}
         <form onSubmit={salvar}>
           <h3>{editando ? 'Editar lançamento' : 'Novo lançamento'}</h3>
+          {mes && <label>Data<input type="date" value={data} min={`${mes}-01`} max={diasDoMes(ano, m).at(-1)} onChange={(e) => setData(e.target.value)} required
+            disabled={editando?.status === 'CONCILIADO'} title={editando?.status === 'CONCILIADO' ? 'Já conciliado: para mudar a data, desfaça a conciliação' : undefined} /></label>}
           <label>Valor<input value={valor} onChange={(e) => setValor(e.target.value)} placeholder="1.234,56 ou =1000+500" autoFocus required /></label>
           <label>Descrição<input value={descricao} onChange={(e) => setDescricao(e.target.value)} /></label>
           <label>Situação
